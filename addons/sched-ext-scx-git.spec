@@ -1,11 +1,11 @@
-%global commit 41d60aef04d2a7fc0da738bf50391ea5f232ddd3
+%global commit 8537c1b47479e118140253bfd025f469a35c9199
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
 Version:        0.1.10.r%{shortcommit}
-Release:        2%{?dist}
+Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
