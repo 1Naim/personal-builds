@@ -1,4 +1,4 @@
-%global commit 3663345036348cf2d2e73ab6ba7062c484298dd3
+%global commit 188b3d3bfc8efa9079f53165fa75114d745973f2
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
