@@ -43,7 +43,7 @@ sched_ext is a Linux kernel feature which enables implementing kernel thread sch
 %prep
 %autosetup -n scx-%{commit}
 
-patch -p1 -i %{PATCH0}
+patch -p0 -i %{PATCH0}
 
 %build
 %meson \
