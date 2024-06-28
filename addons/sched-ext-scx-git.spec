@@ -4,7 +4,7 @@
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
-Version:        20240627.r%{shortcommit}
+Version:        20240628.r%{shortcommit}
 Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
@@ -43,7 +43,7 @@ sched_ext is a Linux kernel feature which enables implementing kernel thread sch
 %prep
 %autosetup -n scx-%{commit}
 
-patch -p1 -i %{PATCH0}
+patch -p1 -i %{PATCH0} -d %{_builddir}/scx-%{commit}/scheds/rust
 
 %build
 %meson \
