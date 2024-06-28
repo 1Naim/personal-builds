@@ -1,0 +1,1264 @@
+diff --git a/meson-scripts/stress_tests.ini b/meson-scripts/stress_tests.ini
+index 9f9ace3..4d1e992 100644
+--- a/meson-scripts/stress_tests.ini
++++ b/meson-scripts/stress_tests.ini
+@@ -15,3 +15,9 @@ sched: scx_rustland
+ sched_args:
+ stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
+ timeout_sec: 15
++
++[scx_bpfland]
++sched: scx_bpfland
++sched_args:
++stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
++timeout_sec: 15
+diff --git a/meson-scripts/test_sched b/meson-scripts/test_sched
+index 8ffd840..7a26784 100755
+--- a/meson-scripts/test_sched
++++ b/meson-scripts/test_sched
+@@ -16,7 +16,7 @@ GUEST_TIMEOUT=60
+ #   - scx_layered: temporarily excluded because it
+ #     cannot run with a default configuration
+ #
+-SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland"
++SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland scx_bpfland"
+ 
+ if [ ! -x `which vng` ]; then
+     echo "vng not found, please install virtme-ng to enable testing"
+diff --git a/rust/scx_utils/src/compat.rs b/rust/scx_utils/src/compat.rs
+index 1f5a443..bb99ab3 100644
+--- a/rust/scx_utils/src/compat.rs
++++ b/rust/scx_utils/src/compat.rs
+@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
+ fn load_vmlinux_btf() -> &'static mut btf {
+     let btf = unsafe { btf__load_vmlinux_btf() };
+     if btf.is_null() {
+-        panic!("btf__load_vmlinux_btf() returned NULL, was CONFIG_DEBUG_INFO_BTF enabled?")
++        panic!("btf__load_vmlinux_btf() returned NULL");
+     }
+     unsafe { &mut *btf }
+ }
+diff --git a/scheds/rust/README.md b/scheds/rust/README.md
+index 074bd2e..d6319a5 100644
+--- a/scheds/rust/README.md
++++ b/scheds/rust/README.md
+@@ -17,3 +17,4 @@ main.rs or \*.bpf.c files.
+ - [scx_rustland](scx_rustland/README.md)
+ - [scx_rlfifo](scx_rlfifo/README.md)
+ - [scx_lavd](scx_lavd/README.md)
++- [scx_bpfland](scx_bpfland/README.md)
+diff --git a/scheds/rust/meson.build b/scheds/rust/meson.build
+index 76c8651..a16688a 100644
+--- a/scheds/rust/meson.build
++++ b/scheds/rust/meson.build
+@@ -19,6 +19,7 @@ subdir('scx_mitosis')
+ subdir('scx_rusty')
+ subdir('scx_rustland')
+ subdir('scx_rlfifo')
++subdir('scx_bpfland')
+ subdir('scx_lavd')
+ 
+ # the target to compile all rust schedulers
+diff --git a/scheds/rust/scx_bpfland/Cargo.toml b/scheds/rust/scx_bpfland/Cargo.toml
+new file mode 100644
+index 0000000..5ad0b10
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/Cargo.toml
+@@ -0,0 +1,25 @@
++[package]
++name = "scx_bpfland"
++version = "0.0.1"
++authors = ["Andrea Righi <righi.andrea@gmail.com>", "Canonical"]
++edition = "2021"
++description = "A vruntime-based sched_ext scheduler that prioritizes interactive workloads. https://github.com/sched-ext/scx/tree/main"
++license = "GPL-2.0-only"
++
++[dependencies]
++anyhow = "1.0.65"
++ctrlc = { version = "3.1", features = ["termination"] }
++clap = { version = "4.1", features = ["derive", "env", "unicode", "wrap_help"] }
++libbpf-rs = "0.23"
++log = "0.4.17"
++scx_utils = { path = "../../../rust/scx_utils", version = "0.8.1" }
++simplelog = "0.12.0"
++rlimit = "0.10.1"
++metrics = "0.23.0"
++metrics-exporter-prometheus = "0.15.0"
++
++[build-dependencies]
++scx_utils = { path = "../../../rust/scx_utils", version = "0.8.1" }
++
++[features]
++enable_backtrace = []
+diff --git a/scheds/rust/scx_bpfland/LICENSE b/scheds/rust/scx_bpfland/LICENSE
+new file mode 120000
+index 0000000..5853aae
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/LICENSE
+@@ -0,0 +1 @@
++../../../LICENSE
+\ No newline at end of file
+diff --git a/scheds/rust/scx_bpfland/README.md b/scheds/rust/scx_bpfland/README.md
+new file mode 100644
+index 0000000..9e10517
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/README.md
+@@ -0,0 +1,46 @@
++# scx_bpfland
++
++This is a single user-defined scheduler used within [sched_ext](https://github.com/sched-ext/scx/tree/main), which is a Linux kernel feature which enables implementing kernel thread schedulers in BPF and dynamically loading them. [Read more about sched_ext](https://github.com/sched-ext/scx/tree/main).
++
++## Overview
++
++scx_bpfland: a vruntime-based sched_ext scheduler that prioritizes interactive
++workloads.
++
++This scheduler is derived from scx_rustland, but it is fully implemented in BPF
++with minimal user-space Rust part to process command line options, collect
++metrics and logs out scheduling statistics. The BPF part makes all the
++scheduling decisions.
++
++Tasks are categorized as either interactive or regular based on their average
++rate of voluntary context switches per second. Tasks that exceed a specific
++voluntary context switch threshold are classified as interactive. Interactive
++tasks are prioritized in a higher-priority queue, while regular tasks are
++placed in a lower-priority queue. Within each queue, tasks are sorted based on
++their weighted runtime: tasks that have higher weight (priority) or use the CPU
++for less time (smaller runtime) are scheduled sooner, due to their a higher
++position in the queue.
++
++Moreover, each task gets a time slice budget. When a task is dispatched, it
++receives a time slice equivalent to the remaining unused portion of its
++previously allocated time slice (with a minimum threshold applied). This gives
++latency-sensitive workloads more chances to exceed their time slice when needed
++to perform short bursts of CPU activity without being interrupted (i.e.,
++real-time audio encoding / decoding workloads).
++
++## Typical Use Case
++
++Interactive workloads, such as gaming, live streaming, multimedia, real-time
++audio encoding/decoding, especially when these workloads are running alongside
++CPU-intensive background tasks.
++
++In this scenario scx_bpfland ensures that interactive workloads maintain a high
++level of responsiveness.
++
++## Production Ready?
++
++The scheduler is based on scx_rustland, implementing nearly the same scheduling
++algorithm with minor changes and optimizations to be fully implemented in BPF.
++
++Given that the scx_rustland scheduling algorithm has been extensively tested,
++this scheduler can be considered ready for production use.
+diff --git a/scheds/rust/scx_bpfland/build.rs b/scheds/rust/scx_bpfland/build.rs
+new file mode 100644
+index 0000000..8aa6cbb
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/build.rs
+@@ -0,0 +1,13 @@
++// Copyright (c) Andrea Righi <righi.andrea@gmail.com>
++//
++// This software may be used and distributed according to the terms of the
++// GNU General Public License version 2.
++
++fn main() {
++    scx_utils::BpfBuilder::new()
++        .unwrap()
++        .enable_intf("src/bpf/intf.h", "bpf_intf.rs")
++        .enable_skel("src/bpf/main.bpf.c", "bpf")
++        .build()
++        .unwrap();
++}
+diff --git a/scheds/rust/scx_bpfland/meson.build b/scheds/rust/scx_bpfland/meson.build
+new file mode 100644
+index 0000000..2d4e126
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/meson.build
+@@ -0,0 +1,8 @@
++sched = custom_target('scx_bpfland',
++              output: '@PLAINNAME@.__PHONY__',
++              input: 'Cargo.toml',
++              command: [cargo, 'build', '--manifest-path=@INPUT@', '--target-dir=@OUTDIR@',
++                        cargo_build_args],
++              env: cargo_env,
++              depends: [sched],
++              build_always_stale: true)
+diff --git a/scheds/rust/scx_bpfland/rustfmt.toml b/scheds/rust/scx_bpfland/rustfmt.toml
+new file mode 100644
+index 0000000..b7258ed
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/rustfmt.toml
+@@ -0,0 +1,8 @@
++# Get help on options with `rustfmt --help=config`
++# Please keep these in alphabetical order.
++edition = "2021"
++group_imports = "StdExternalCrate"
++imports_granularity = "Item"
++merge_derives = false
++use_field_init_shorthand = true
++version = "Two"
+diff --git a/scheds/rust/scx_bpfland/src/bpf/intf.h b/scheds/rust/scx_bpfland/src/bpf/intf.h
+new file mode 100644
+index 0000000..ad8c9a3
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/src/bpf/intf.h
+@@ -0,0 +1,35 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>
++ *
++ * This software may be used and distributed according to the terms of the GNU
++ * General Public License version 2.
++ */
++#ifndef __INTF_H
++#define __INTF_H
++
++#include <limits.h>
++
++#define MAX(x, y) ((x) > (y) ? (x) : (y))
++#define MIN(x, y) ((x) < (y) ? (x) : (y))
++#define CLAMP(val, lo, hi) MIN(MAX(val, lo), hi)
++
++enum consts {
++	NSEC_PER_SEC = 1000000000ULL,
++};
++
++#ifndef __VMLINUX_H__
++typedef unsigned char u8;
++typedef unsigned short u16;
++typedef unsigned int u32;
++typedef unsigned long u64;
++
++typedef signed char s8;
++typedef signed short s16;
++typedef signed int s32;
++typedef signed long s64;
++
++typedef int pid_t;
++#endif /* __VMLINUX_H__ */
++
++#endif /* __INTF_H */
+diff --git a/scheds/rust/scx_bpfland/src/bpf/main.bpf.c b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
+new file mode 100644
+index 0000000..62b62a1
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
+@@ -0,0 +1,570 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>
++ */
++#include <scx/common.bpf.h>
++#include "intf.h"
++
++/*
++ * Maximum amount of CPUs supported by the scheduler.
++ */
++#define MAX_CPUS	1024
++
++/*
++ * DSQ used to dispatch regular tasks.
++ */
++#define SHARED_DSQ	MAX_CPUS
++
++/*
++ * Priority DSQ used to dispatch interactive tasks.
++ */
++#define PRIO_DSQ	(MAX_CPUS + 1)
++
++char _license[] SEC("license") = "GPL";
++
++/* Allow to use bpf_printk() only when @debug is set */
++#define dbg_msg(_fmt, ...) do {				\
++	if (debug)					\
++		bpf_printk(_fmt, ##__VA_ARGS__);	\
++} while(0)
++
++ /* Report additional debugging information */
++const volatile bool debug;
++
++/*
++ * Default task time slice.
++ */
++const volatile u64 slice_ns = SCX_SLICE_DFL;
++
++/*
++ * Time slice used when system is over commissioned.
++ */
++const volatile u64 slice_ns_min = 500000;
++
++/*
++ * Maximum time slice lag.
++ *
++ * Increasing this value can help to increase the responsiveness of interactive
++ * tasks at the cost of making regular and newly created tasks less responsive
++ * (0 = disabled).
++ */
++const volatile u64 slice_ns_lag;
++
++/*
++ * Enable built-in idle selection logic.
++ */
++const volatile bool builtin_idle;
++
++/*
++ * Threshold of voluntary context switches used to classify a task as
++ * interactive.
++ */
++const volatile u64 nvcsw_thresh = 10;
++
++/*
++ * Scheduling statistics.
++ */
++volatile u64 nr_direct_dispatches, nr_kthread_dispatches,
++	     nr_shared_dispatches, nr_prio_dispatches;
++
++/*
++ * Amount of currently running tasks.
++ */
++volatile u64 nr_running;
++
++/*
++ * Exit information.
++ */
++UEI_DEFINE(uei);
++
++/*
++ * CPUs in the system have SMT is enabled.
++ */
++const volatile bool smt_enabled = true;
++
++/*
++ * Current global vruntime.
++ */
++static u64 vtime_now;
++
++/*
++ * Per-task local storage.
++ *
++ * This contain all the per-task information used internally by the BPF code.
++ */
++struct task_ctx {
++	/*
++	 * Set to true if the task is classified as interactive.
++	 */
++	bool is_interactive;
++
++	/*
++	 * Voluntary context switches metrics.
++	 */
++	u64 nvcsw;
++	u64 nvcsw_ts;
++	u64 avg_nvcsw;
++};
++
++/* Map that contains task-local storage. */
++struct {
++	__uint(type, BPF_MAP_TYPE_TASK_STORAGE);
++	__uint(map_flags, BPF_F_NO_PREALLOC);
++	__type(key, int);
++	__type(value, struct task_ctx);
++} task_ctx_stor SEC(".maps");
++
++/* Return a local task context from a generic task */
++struct task_ctx *lookup_task_ctx(const struct task_struct *p)
++{
++	struct task_ctx *tctx;
++
++	tctx = bpf_task_storage_get(&task_ctx_stor, (struct task_struct *)p, 0, 0);
++	if (!tctx) {
++		scx_bpf_error("Failed to lookup task ctx for %s", p->comm);
++		return NULL;
++	}
++	return tctx;
++}
++
++/*
++ * Return true if the target task @p is a kernel thread.
++ */
++static inline bool is_kthread(const struct task_struct *p)
++{
++	return !!(p->flags & PF_KTHREAD);
++}
++
++/*
++ * Exponential weighted moving average (EWMA).
++ *
++ * Copied from scx_lavd. Returns the new average as:
++ *
++ *	new_avg := (old_avg * .75) + (new_val * .25);
++ */
++static u64 calc_avg(u64 old_val, u64 new_val)
++{
++	return (old_val - (old_val >> 2)) + (new_val >> 2);
++}
++
++/*
++ * Compare two vruntime values, returns true if the first value is less than
++ * the second one.
++ *
++ * Copied from scx_simple.
++ */
++static inline bool vtime_before(u64 a, u64 b)
++{
++	return (s64)(a - b) < 0;
++}
++
++/*
++ * Return task's evaluated vruntime.
++ */
++static inline u64 task_vtime(struct task_struct *p)
++{
++	u64 vtime = p->scx.dsq_vtime;
++
++	/*
++	 * Limit the vruntime to (vtime_now - slice_ns_lag) to avoid penalizing
++	 * tasks too much (this helps to speed up new fork'ed tasks).
++	 */
++	if (vtime_before(vtime, vtime_now - slice_ns_lag))
++		vtime = vtime_now - slice_ns_lag;
++
++	return vtime;
++}
++
++/*
++ * Return the task's unused portion of its previously assigned time slice (with
++ * a minimum of slice_ns_min).
++ */
++static inline u64 task_slice(struct task_struct *p)
++{
++	u64 slice = p->scx.slice;
++
++	return MAX(slice, slice_ns_min);
++}
++
++/*
++ * Return the DSQ ID associated to a CPU, or SHARED_DSQ if the CPU is not
++ * valid.
++ */
++static u64 cpu_to_dsq(s32 cpu)
++{
++	if (cpu < 0 || cpu >= MAX_CPUS) {
++		scx_bpf_error("Invalid cpu: %d", cpu);
++		return SHARED_DSQ;
++	}
++	return (u64)cpu;
++}
++
++/*
++ * Dispatch a per-CPU kthread directly to the local CPU DSQ.
++ */
++static void dispatch_kthread(struct task_struct *p, u64 enq_flags)
++{
++	u64 slice = task_slice(p);
++
++	/*
++	 * Use the local CPU DSQ directly for per-CPU kthreads, to give them
++	 * maximum priority.
++	 */
++	scx_bpf_dispatch(p, SCX_DSQ_LOCAL, slice, enq_flags);
++
++	__sync_fetch_and_add(&nr_kthread_dispatches, 1);
++}
++
++/*
++ * Dispatch a task directly to the assigned CPU DSQ (used when an idle CPU is
++ * found).
++ */
++static int dispatch_direct_cpu(struct task_struct *p, s32 cpu)
++{
++	u64 slice = task_slice(p);
++	u64 dsq_id = cpu_to_dsq(cpu);
++
++	/*
++	 * Make sure we can dispatch the task to the target CPU according to
++	 * its cpumask.
++	 */
++	if (!bpf_cpumask_test_cpu(cpu, p->cpus_ptr))
++		return -EINVAL;
++
++	/*
++	 * We don't need to use vtime here, because we basically dispatch one
++	 * task at a time when the corresponding CPU is idle.
++	 *
++	 * We could also use SCX_DSQ_LOCAL, but we want to distinguish regular
++	 * tasks from per-CPU kthreads to give more priority to the latter.
++	 */
++	scx_bpf_dispatch(p, dsq_id, slice, 0);
++	__sync_fetch_and_add(&nr_direct_dispatches, 1);
++
++	/*
++	 * Wake-up the target CPU to make sure that the task is consumed as
++	 * soon as possible.
++	 *
++	 * We know the CPU is idle because direct dispatching only occurs to
++	 * idle CPUs from select_cpu(), so using SCX_KICK_IDLE is unnecessary
++	 * in this case.
++	 *
++	 * Note that the target CPU must be activated, because the task has
++	 * been dispatched to a DSQ that only the target CPU can consume, and
++	 * the target CPU is currently idle. If we do not kick the CPU, the
++	 * task can stall in the DSQ indefinitely.
++	 */
++	scx_bpf_kick_cpu(cpu, 0);
++
++	return 0;
++}
++
++/*
++ * Dispatch a regular task.
++ */
++static void dispatch_task(struct task_struct *p, u64 enq_flags)
++{
++	u64 vtime = task_vtime(p);
++	u64 slice = task_slice(p);
++	struct task_ctx *tctx;
++
++	tctx = lookup_task_ctx(p);
++	if (!tctx)
++		return;
++	/*
++	 * Always dispatch interactive tasks to the priority DSQ and regular
++	 * tasks to the shared DSQ.
++	 */
++	if (tctx->is_interactive) {
++		scx_bpf_dispatch_vtime(p, PRIO_DSQ, slice, vtime, enq_flags);
++		__sync_fetch_and_add(&nr_prio_dispatches, 1);
++	} else {
++		scx_bpf_dispatch_vtime(p, SHARED_DSQ, slice, vtime, enq_flags);
++		__sync_fetch_and_add(&nr_shared_dispatches, 1);
++	}
++}
++
++/*
++ * Find an idle CPU in the system.
++ */
++static s32 pick_idle_cpu(struct task_struct *p, s32 prev_cpu, u64 wake_flags)
++{
++	const struct cpumask *idle_smtmask;
++	bool prev_in_cand;
++	s32 cpu;
++
++	if (builtin_idle) {
++		bool is_idle = false;
++
++		/*
++		 * Find an idle CPU using the sched_ext built-in idle selection
++		 * logic.
++		 */
++		cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
++		if (is_idle)
++			return cpu;
++
++		return -ENOENT;
++	}
++
++	idle_smtmask = scx_bpf_get_idle_smtmask();
++	prev_in_cand = bpf_cpumask_test_cpu(prev_cpu, p->cpus_ptr);
++
++	if (smt_enabled) {
++		/*
++		 * If the task can still run on the previously used CPU and
++		 * it's a full-idle core, keep using it.
++		 */
++		if (prev_in_cand &&
++		    bpf_cpumask_test_cpu(prev_cpu, idle_smtmask) &&
++		    scx_bpf_test_and_clear_cpu_idle(prev_cpu)) {
++			cpu = prev_cpu;
++			goto out_put_idle_smtmask;
++		}
++
++		/*
++		 * Otherwise, search for another usable full-idle core.
++		 */
++		cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, SCX_PICK_IDLE_CORE);
++		if (cpu >= 0)
++			goto out_put_idle_smtmask;
++	}
++
++	/*
++	 * If a full-idle core can't be found (or if it's not an SMT system)
++	 * try to re-use the same CPU, even if it's not in a full-idle core.
++	 */
++	if (prev_in_cand && scx_bpf_test_and_clear_cpu_idle(prev_cpu)) {
++		cpu = prev_cpu;
++		goto out_put_idle_smtmask;
++	}
++
++	/*
++	 * If all the previous attempts have failed, try to use any idle CPU in
++	 * the system.
++	 */
++	cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, 0);
++	if (cpu >= 0)
++		goto out_put_idle_smtmask;
++
++	/*
++	 * If we are waking up a task and we couldn't find any idle CPU to use,
++	 * at least set the task as interactive, so that it can be dispatched
++	 * as soon as possible on the first CPU available.
++	 */
++	if (wake_flags & SCX_WAKE_SYNC) {
++		struct task_ctx *tctx;
++
++		tctx = lookup_task_ctx(p);
++		if (tctx)
++			tctx->is_interactive = true;
++	}
++
++out_put_idle_smtmask:
++	scx_bpf_put_idle_cpumask(idle_smtmask);
++
++	return cpu;
++}
++
++s32 BPF_STRUCT_OPS(bpfland_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
++{
++	s32 cpu;
++
++	cpu = pick_idle_cpu(p, prev_cpu, wake_flags);
++	if (cpu >= 0) {
++		dispatch_direct_cpu(p, cpu);
++		return cpu;
++	}
++
++	return prev_cpu;
++}
++
++void BPF_STRUCT_OPS(bpfland_enqueue, struct task_struct *p, u64 enq_flags)
++{
++	/*
++	 * Always dispatch per-CPU kthreads immediately.
++	 *
++	 * This allows to prioritize critical kernel threads that may
++	 * potentially slow down the entire system if they are blocked for too
++	 * long (i.e., ksoftirqd/N, rcuop/N, etc.).
++	 *
++	 * NOTE: this could cause interactivity problems or unfairness if there
++	 * are too many softirqs being scheduled (e.g., in presence of high RX
++	 * network RX traffic). However, considering that the main target of
++	 * this scheduler is desktop usage, this shouldn't be a problem.
++	 */
++	if (is_kthread(p) && p->nr_cpus_allowed == 1) {
++		dispatch_kthread(p, enq_flags);
++		return;
++	}
++
++	/*
++	 * Dispatch all the other tasks that were not dispatched directly in
++	 * select_cpu().
++	 */
++	dispatch_task(p, enq_flags);
++}
++
++void BPF_STRUCT_OPS(bpfland_dispatch, s32 cpu, struct task_struct *prev)
++{
++	/*
++	 * First consume directly dispatched tasks, so that they can
++	 * immediately use the CPU assigned in select_cpu().
++	 */
++	if (scx_bpf_consume(cpu_to_dsq(cpu)))
++		return;
++
++	/*
++	 * Then always consume interactive tasks before regular tasks.
++	 *
++	 * This is fine and we shouldn't have starvation, because interactive
++	 * tasks are classified by their amount of voluntary context switches,
++	 * so they should naturally release the CPU quickly and give a chance
++	 * to the regular tasks to run.
++	 *
++	 * TODO: Add a tunable setting to limit the number of priority tasks
++	 * dispatched. Once this limit is reached, at least one regular task
++	 * must be dispatched.
++	 */
++	if (scx_bpf_consume(PRIO_DSQ))
++		return;
++
++	/*
++	 * Lastly, consume regular tasks from the shared DSQ.
++	 */
++	scx_bpf_consume(SHARED_DSQ);
++}
++
++void BPF_STRUCT_OPS(bpfland_running, struct task_struct *p)
++{
++	/* Update global vruntime */
++	if (vtime_before(vtime_now, p->scx.dsq_vtime))
++		vtime_now = p->scx.dsq_vtime;
++
++	__sync_fetch_and_add(&nr_running, 1);
++}
++
++/*
++ * Update task statistics when the task is releasing the CPU (either
++ * voluntarily or because it expires its assigned time slice).
++ */
++void BPF_STRUCT_OPS(bpfland_stopping, struct task_struct *p, bool runnable)
++{
++	u64 now = bpf_ktime_get_ns();
++	struct task_ctx *tctx;
++
++	__sync_fetch_and_sub(&nr_running, 1);
++
++	tctx = lookup_task_ctx(p);
++	if (!tctx)
++		return;
++
++	/*
++	 * Update task vruntime, charging the weighted used time slice.
++	 *
++	 * Note that using p->scx.slice here can excessively penalize tasks
++	 * that call sched_yield(), because in sched_ext, yielding is
++	 * implemented by setting p->scx.slice to 0, that is considered as if
++	 * the task has used up its entire budgeted time slice.
++	 *
++	 * However, this is balanced by the fact that yielding increases the
++	 * number of voluntary context switches (nvcsw), giving the task more
++	 * opportunities to be classified as interactive and dispatched to the
++	 * high priority DSQ (PRIO_DSQ).
++	 */
++	p->scx.dsq_vtime += (slice_ns - p->scx.slice) * 100 / p->scx.weight;
++
++	/*
++	 * Refresh voluntary context switch metrics.
++	 *
++	 * Evaluate the average number of voluntary context switches per second
++	 * using an exponentially weighted moving average, see calc_avg().
++	 */
++	if (now - tctx->nvcsw_ts > NSEC_PER_SEC) {
++		u64 delta_nvcsw = p->nvcsw - tctx->nvcsw;
++		u64 delta_t = MAX(now - tctx->nvcsw_ts, 1);
++		u64 avg_nvcsw = delta_nvcsw * NSEC_PER_SEC / delta_t;
++
++		tctx->avg_nvcsw = calc_avg(tctx->avg_nvcsw, avg_nvcsw);
++		tctx->nvcsw = p->nvcsw;
++		tctx->nvcsw_ts = now;
++
++		dbg_msg("%s: pid=%d (%s) delta_nvcsw=%llu delta_t=%llu "
++			"curr_avg_nvcsw=%llu avg_nvcsw=%llu",
++			__func__, p->pid, p->comm, delta_nvcsw, delta_t,
++			avg_nvcsw, tctx->avg_nvcsw);
++	}
++
++	/*
++	 * Classify interactive tasks based on the average amount of their
++	 * voluntary context switches.
++	 */
++	if (nvcsw_thresh && tctx->avg_nvcsw >= nvcsw_thresh)
++		tctx->is_interactive = true;
++}
++
++void BPF_STRUCT_OPS(bpfland_enable, struct task_struct *p)
++{
++	/* Initialize task's vruntime */
++	p->scx.dsq_vtime = vtime_now;
++}
++
++s32 BPF_STRUCT_OPS(bpfland_init_task, struct task_struct *p,
++		   struct scx_init_task_args *args)
++{
++	if (bpf_task_storage_get(&task_ctx_stor, p, 0,
++				 BPF_LOCAL_STORAGE_GET_F_CREATE))
++		return 0;
++	else
++		return -ENOMEM;
++}
++
++s32 BPF_STRUCT_OPS_SLEEPABLE(bpfland_init)
++{
++	int err;
++	s32 cpu;
++
++	/* Create per-CPU DSQs (used to dispatch tasks directly on a CPU) */
++	bpf_for(cpu, 0, MAX_CPUS) {
++		err = scx_bpf_create_dsq(cpu_to_dsq(cpu), -1);
++		if (err) {
++			scx_bpf_error("failed to create pcpu DSQ %d: %d",
++				      cpu, err);
++			return err;
++		}
++	}
++
++	/* Create the global priority DSQ (for interactive tasks) */
++	err = scx_bpf_create_dsq(PRIO_DSQ, -1);
++	if (err) {
++		scx_bpf_error("failed to create priority DSQ: %d", err);
++		return err;
++	}
++
++	/* Create the global shared DSQ (for regular tasks) */
++	err = scx_bpf_create_dsq(SHARED_DSQ, -1);
++	if (err) {
++		scx_bpf_error("failed to create shared DSQ: %d", err);
++		return err;
++	}
++
++	return 0;
++}
++
++void BPF_STRUCT_OPS(bpfland_exit, struct scx_exit_info *ei)
++{
++	UEI_RECORD(uei, ei);
++}
++
++SCX_OPS_DEFINE(bpfland_ops,
++	       .select_cpu		= (void *)bpfland_select_cpu,
++	       .enqueue			= (void *)bpfland_enqueue,
++	       .dispatch		= (void *)bpfland_dispatch,
++	       .running			= (void *)bpfland_running,
++	       .stopping		= (void *)bpfland_stopping,
++	       .enable			= (void *)bpfland_enable,
++	       .init_task		= (void *)bpfland_init_task,
++	       .init			= (void *)bpfland_init,
++	       .exit			= (void *)bpfland_exit,
++	       .timeout_ms		= 5000,
++	       .name			= "bpfland");
+diff --git a/scheds/rust/scx_bpfland/src/bpf_intf.rs b/scheds/rust/scx_bpfland/src/bpf_intf.rs
+new file mode 100644
+index 0000000..df31421
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/src/bpf_intf.rs
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-2.0
++//
++// Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>
++
++// This software may be used and distributed according to the terms of the
++// GNU General Public License version 2.
++#![allow(non_upper_case_globals)]
++#![allow(non_camel_case_types)]
++#![allow(non_snake_case)]
++#![allow(dead_code)]
++
++include!(concat!(env!("OUT_DIR"), "/bpf_intf.rs"));
+diff --git a/scheds/rust/scx_bpfland/src/bpf_skel.rs b/scheds/rust/scx_bpfland/src/bpf_skel.rs
+new file mode 100644
+index 0000000..9a10102
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/src/bpf_skel.rs
+@@ -0,0 +1,8 @@
++// SPDX-License-Identifier: GPL-2.0
++//
++// Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>
++
++// This software may be used and distributed according to the terms of the
++// GNU General Public License version 2.
++
++include!(concat!(env!("OUT_DIR"), "/bpf_skel.rs"));
+diff --git a/scheds/rust/scx_bpfland/src/main.rs b/scheds/rust/scx_bpfland/src/main.rs
+new file mode 100644
+index 0000000..9352712
+--- /dev/null
++++ b/scheds/rust/scx_bpfland/src/main.rs
+@@ -0,0 +1,286 @@
++// SPDX-License-Identifier: GPL-2.0
++//
++// Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>.
++
++// This software may be used and distributed according to the terms of the
++// GNU General Public License version 2.
++
++mod bpf_skel;
++pub use bpf_skel::*;
++pub mod bpf_intf;
++pub use bpf_intf::*;
++
++use std::sync::atomic::AtomicBool;
++use std::sync::atomic::Ordering;
++use std::sync::Arc;
++use std::time::Duration;
++
++use std::str;
++
++use anyhow::Context;
++use anyhow::Result;
++use clap::Parser;
++use log::info;
++
++use metrics::{gauge, Gauge};
++use metrics_exporter_prometheus::PrometheusBuilder;
++
++use rlimit::{getrlimit, setrlimit, Resource};
++
++use libbpf_rs::skel::OpenSkel;
++use libbpf_rs::skel::Skel;
++use libbpf_rs::skel::SkelBuilder;
++
++use scx_utils::scx_ops_attach;
++use scx_utils::scx_ops_load;
++use scx_utils::scx_ops_open;
++use scx_utils::uei_exited;
++use scx_utils::uei_report;
++use scx_utils::Topology;
++use scx_utils::UserExitInfo;
++
++const SCHEDULER_NAME: &'static str = "scx_bpfland";
++
++const VERSION: &'static str = env!("CARGO_PKG_VERSION");
++
++/// scx_bpfland: a vruntime-based sched_ext scheduler that prioritizes interactive workloads.
++///
++/// This scheduler is derived from scx_rustland, but it is fully implemented in BFP with minimal
++/// user-space part written in Rust to process command line options, collect metrics and logs out
++/// scheduling statistics.
++///
++/// The BPF part makes all the scheduling decisions (see src/bpf/main.bpf.c).
++#[derive(Debug, Parser)]
++struct Opts {
++    /// Exit debug dump buffer length. 0 indicates default.
++    #[clap(long, default_value = "0")]
++    exit_dump_len: u32,
++
++    /// Maximum scheduling slice duration in microseconds.
++    #[clap(short = 's', long, default_value = "20000")]
++    slice_us: u64,
++
++    /// Minimum scheduling slice duration in microseconds.
++    #[clap(short = 'S', long, default_value = "500")]
++    slice_us_min: u64,
++
++    /// Maximum time slice lag in microseconds.
++    ///
++    /// Increasing this value can help to increase the responsiveness of interactive tasks at the
++    /// cost of making regular and newly created tasks less responsive (0 = disabled).
++    #[clap(short = 'l', long, default_value = "0")]
++    slice_us_lag: u64,
++
++    /// Threshold of voluntary context switch per second, used to classify interactive tasks
++    /// (0 = disable interactive tasks classification).
++    #[clap(short = 'c', long, default_value = "10")]
++    nvcsw_thresh: u64,
++
++    /// Enable direct dispatch via sched_ext built-in idle selection logic.
++    #[clap(short = 'i', long, action = clap::ArgAction::SetTrue)]
++    builtin_idle: bool,
++
++    /// Enable the Prometheus endpoint for metrics on port 9000.
++    #[clap(short = 'p', long, action = clap::ArgAction::SetTrue)]
++    enable_prometheus: bool,
++
++    /// Enable BPF debugging via /sys/kernel/debug/tracing/trace_pipe.
++    #[clap(short = 'd', long, action = clap::ArgAction::SetTrue)]
++    debug: bool,
++
++    /// Enable verbose output, including libbpf details.
++    #[clap(short = 'v', long, action = clap::ArgAction::SetTrue)]
++    verbose: bool,
++
++    /// Print scheduler version and exit.
++    #[clap(short = 'V', long, action = clap::ArgAction::SetTrue)]
++    version: bool,
++}
++
++struct Metrics {
++    nr_running: Gauge,
++    nr_kthread_dispatches: Gauge,
++    nr_direct_dispatches: Gauge,
++    nr_prio_dispatches: Gauge,
++    nr_shared_dispatches: Gauge,
++}
++
++impl Metrics {
++    fn new() -> Self {
++        Metrics {
++            nr_running: gauge!(
++                "nr_running", "info" => "Number of running tasks"
++            ),
++            nr_kthread_dispatches: gauge!(
++                "nr_kthread_dispatches", "info" => "Number of kthread dispatches"
++            ),
++            nr_direct_dispatches: gauge!(
++                "nr_direct_dispatches", "info" => "Number of direct dispatches"
++            ),
++            nr_prio_dispatches: gauge!(
++                "nr_prio_dispatches", "info" => "Number of interactive task dispatches"
++            ),
++            nr_shared_dispatches: gauge!(
++                "nr_shared_dispatches", "info" => "Number of regular task dispatches"
++            ),
++        }
++    }
++}
++
++struct Scheduler<'a> {
++    skel: BpfSkel<'a>,
++    struct_ops: Option<libbpf_rs::Link>,
++    metrics: Metrics,
++}
++
++impl<'a> Scheduler<'a> {
++    fn init(opts: &'a Opts) -> Result<Self> {
++        let (soft_limit, _) = getrlimit(Resource::MEMLOCK).unwrap();
++        setrlimit(Resource::MEMLOCK, soft_limit, rlimit::INFINITY).unwrap();
++
++        // Validate command line arguments.
++        assert!(opts.slice_us >= opts.slice_us_min);
++
++        // Check host topology to determine if we need to enable SMT capabilities.
++        let topo = Topology::new().expect("Failed to build host topology");
++        let nr_cores = topo.cores().len();
++        let nr_cpus = topo
++            .cores()
++            .into_iter()
++            .flat_map(|core| core.span().clone().into_iter())
++            .count();
++
++        let smt_enabled = nr_cpus > nr_cores;
++        info!("SMT scheduling {}", if smt_enabled { "on" } else { "off" });
++        if opts.verbose {
++            info!("nr_cores={} nr_cpus={}", nr_cores, nr_cpus);
++        }
++
++        // Initialize BPF connector.
++        let mut skel_builder = BpfSkelBuilder::default();
++        skel_builder.obj_builder.debug(opts.verbose);
++        let mut skel = scx_ops_open!(skel_builder, bpfland_ops)?;
++
++        skel.struct_ops.bpfland_ops_mut().exit_dump_len = opts.exit_dump_len;
++
++        // Override default BPF scheduling parameters.
++        skel.rodata_mut().debug = opts.debug;
++        skel.rodata_mut().smt_enabled = smt_enabled;
++        skel.rodata_mut().slice_ns = opts.slice_us * 1000;
++        skel.rodata_mut().slice_ns_min = opts.slice_us_min * 1000;
++        skel.rodata_mut().slice_ns_lag = opts.slice_us_lag * 1000;
++        skel.rodata_mut().nvcsw_thresh = opts.nvcsw_thresh;
++        skel.rodata_mut().builtin_idle = opts.builtin_idle;
++
++        // Attach the scheduler.
++        let mut skel = scx_ops_load!(skel, bpfland_ops, uei)?;
++        let struct_ops = Some(scx_ops_attach!(skel, bpfland_ops)?);
++
++        // Enable Prometheus metrics.
++        if opts.enable_prometheus {
++            info!("Enabling Prometheus endpoint: http://localhost:9000");
++            PrometheusBuilder::new()
++                .install()
++                .expect("failed to install Prometheus recorder");
++        }
++
++        Ok(Self {
++            skel,
++            struct_ops,
++            metrics: Metrics::new(),
++        })
++    }
++
++    fn update_stats(&mut self) {
++        let nr_running = self.skel.bss().nr_running;
++        let nr_cpus = libbpf_rs::num_possible_cpus().unwrap();
++        let nr_kthread_dispatches = self.skel.bss().nr_kthread_dispatches;
++        let nr_direct_dispatches = self.skel.bss().nr_direct_dispatches;
++        let nr_prio_dispatches = self.skel.bss().nr_prio_dispatches;
++        let nr_shared_dispatches = self.skel.bss().nr_shared_dispatches;
++
++        // Update Prometheus statistics.
++        self.metrics.nr_running.set(nr_running as f64);
++        self.metrics
++            .nr_kthread_dispatches
++            .set(nr_kthread_dispatches as f64);
++        self.metrics
++            .nr_direct_dispatches
++            .set(nr_direct_dispatches as f64);
++        self.metrics
++            .nr_prio_dispatches
++            .set(nr_prio_dispatches as f64);
++        self.metrics
++            .nr_shared_dispatches
++            .set(nr_shared_dispatches as f64);
++
++        // Log scheduling statistics.
++        info!("running={}/{} nr_kthread_dispatches={} nr_direct_dispatches={} nr_prio_dispatches={} nr_shared_dispatches={}",
++            nr_running,
++            nr_cpus,
++            nr_kthread_dispatches,
++            nr_direct_dispatches,
++            nr_prio_dispatches,
++            nr_shared_dispatches);
++    }
++
++    pub fn exited(&mut self) -> bool {
++        uei_exited!(&self.skel, uei)
++    }
++
++    fn run(&mut self, shutdown: Arc<AtomicBool>) -> Result<UserExitInfo> {
++        while !shutdown.load(Ordering::Relaxed) && !self.exited() {
++            self.update_stats();
++            std::thread::sleep(Duration::from_millis(1000));
++        }
++        self.update_stats();
++
++        self.struct_ops.take();
++        uei_report!(&self.skel, uei)
++    }
++}
++
++impl<'a> Drop for Scheduler<'a> {
++    fn drop(&mut self) {
++        info!("Unregister {} scheduler", SCHEDULER_NAME);
++    }
++}
++
++fn main() -> Result<()> {
++    let opts = Opts::parse();
++
++    if opts.version {
++        println!("{} version {}", SCHEDULER_NAME, VERSION);
++        return Ok(());
++    }
++
++    let loglevel = simplelog::LevelFilter::Info;
++
++    let mut lcfg = simplelog::ConfigBuilder::new();
++    lcfg.set_time_level(simplelog::LevelFilter::Error)
++        .set_location_level(simplelog::LevelFilter::Off)
++        .set_target_level(simplelog::LevelFilter::Off)
++        .set_thread_level(simplelog::LevelFilter::Off);
++    simplelog::TermLogger::init(
++        loglevel,
++        lcfg.build(),
++        simplelog::TerminalMode::Stderr,
++        simplelog::ColorChoice::Auto,
++    )?;
++
++    let shutdown = Arc::new(AtomicBool::new(false));
++    let shutdown_clone = shutdown.clone();
++    ctrlc::set_handler(move || {
++        shutdown_clone.store(true, Ordering::Relaxed);
++    })
++    .context("Error setting Ctrl-C handler")?;
++
++    loop {
++        let mut sched = Scheduler::init(&opts)?;
++        if !sched.run(shutdown.clone())?.should_restart() {
++            break;
++        }
++    }
++
++    Ok(())
++}
+diff --git a/scheds/rust/scx_lavd/src/bpf/intf.h b/scheds/rust/scx_lavd/src/bpf/intf.h
+index a909fae..630898f 100644
+--- a/scheds/rust/scx_lavd/src/bpf/intf.h
++++ b/scheds/rust/scx_lavd/src/bpf/intf.h
+@@ -62,8 +62,8 @@ enum consts {
+ 	LAVD_SLICE_UNDECIDED		= SCX_SLICE_INF,
+ 	LAVD_SLICE_GREEDY_FT		= 3,
+ 	LAVD_LOAD_FACTOR_ADJ		= 6, /* adjustment for better estimation */
+-	LAVD_LOAD_FACTOR_MAX		= (20 * 1000),
+-	LAVD_LOAD_FACTOR_FT		= 80, /* factor to stretch the time line */
++	LAVD_LOAD_FACTOR_MAX		= (10 * 1000),
++	LAVD_LOAD_FACTOR_FT		= 4, /* factor to stretch the time line */
+ 
+ 	LAVD_LC_FREQ_MAX		= 1000000,
+ 	LAVD_LC_RUNTIME_MAX		= LAVD_TARGETED_LATENCY_NS,
+@@ -75,7 +75,6 @@ enum consts {
+ 	LAVD_SLICE_BOOST_MAX_STEP	= 8, /* 8 slice exhausitions in a row */
+ 	LAVD_GREEDY_RATIO_MAX		= USHRT_MAX,
+ 	LAVD_LAT_PRIO_IDLE		= USHRT_MAX,
+-	LAVD_LAT_WEIGHT_SHIFT		= 3,
+ 
+ 	LAVD_ELIGIBLE_TIME_LAT_FT	= 16,
+ 	LAVD_ELIGIBLE_TIME_MAX		= (100 * NSEC_PER_USEC),
+diff --git a/scheds/rust/scx_lavd/src/bpf/main.bpf.c b/scheds/rust/scx_lavd/src/bpf/main.bpf.c
+index 094b5f5..7cadfb7 100644
+--- a/scheds/rust/scx_lavd/src/bpf/main.bpf.c
++++ b/scheds/rust/scx_lavd/src/bpf/main.bpf.c
+@@ -370,20 +370,19 @@ static const u64 sched_prio_to_slice_weight[NICE_WIDTH] = {
+  * It is used to determine the virtual deadline. Each step increases by 10%.
+  * The idea behind the virtual deadline is to limit the competition window
+  * among concurrent tasks. For example, in the case of a normal priority task
+- * with nice 0, its corresponding value is 7.5 msec (when LAVD_LAT_WEIGHT_SHIFT
+- * is 0). This guarantees that any tasks enqueued in 7.5 msec after the task is
+- * enqueued will not compete for CPU time with the task. This array is the
+- * inverse of sched_prio_to_latency_weight with some normalization. Suppose the
+- * maximum time slice per schedule (LAVD_SLICE_MAX_NS) is 3 msec. We normalized
+- * the values so that the normal priority (nice 0) has a deadline of 7.5 msec,
+- * a center of the targeted latency (i.e., when LAVD_TARGETED_LATENCY_NS is 15
++ * with nice 0, its corresponding value is 7.5 msec. This guarantees that any
++ * tasks enqueued in 7.5 msec after the task is enqueued will not compete for
++ * CPU time with the task. This array is the inverse of
++ * sched_prio_to_latency_weight with some normalization. Suppose the maximum
++ * time slice per schedule (LAVD_SLICE_MAX_NS) is 3 msec. We normalized the
++ * values so that the normal priority (nice 0) has a deadline of 7.5 msec, a
++ * center of the targeted latency (i.e., when LAVD_TARGETED_LATENCY_NS is 15
+  * msec). The virtual deadline ranges from 87 usec to 512 msec. As the maximum
+  * time slice becomes shorter, the deadlines become tighter.
+  */
+ static const u64 sched_prio_to_latency_weight[NICE_WIDTH] = {
+ 	/* weight	nice priority	sched priority	vdeadline (usec)    */
+ 	/*						(max slice == 3 ms) */
+-	/*                                              (LAVD_LAT_WEIGHT_SHIFT == 0) */
+ 	/* ------	-------------	--------------	------------------- */
+ 	    29,		/* -20		 0		    87 */
+ 	    36,		/* -19		 1		   108 */
+@@ -1449,12 +1448,7 @@ static u64 calc_latency_weight(struct task_struct *p, struct task_ctx *taskc,
+ 			       struct cpu_ctx *cpuc, bool is_wakeup)
+ {
+ 	boost_lat(p, taskc, cpuc, is_wakeup);
+-
+-	/*
+-	 * Tighten the competition window according to LAVD_LAT_WEIGHT_SHIFT.
+-	 */
+-	return sched_prio_to_latency_weight[taskc->lat_prio] >>
+-	       LAVD_LAT_WEIGHT_SHIFT;
++	return sched_prio_to_latency_weight[taskc->lat_prio];
+ }
+ 
+ static u64 calc_virtual_deadline_delta(struct task_struct *p,
+@@ -1485,17 +1479,11 @@ static u64 calc_virtual_deadline_delta(struct task_struct *p,
+ 
+ 	/*
+ 	 * When a system is overloaded (>1000), stretch time space so make time
+-	 * tick logically slower to give room to execute the overloaded tasks.
++	 * tick slower to give room to execute the overloaded tasks.
+ 	 */
+-	if (load_factor > 1000) {
+-		/*
+-		 * The time space is stretched more if task's latency priority
+-		 * is lower (i.e., higher value) and the load is higher.
+-		 */
+-		vdeadline_delta_ns = (vdeadline_delta_ns * load_factor *
+-				      taskc->lat_prio * taskc->lat_prio) /
+-				     (LAVD_LOAD_FACTOR_FT * 1000);
+-	}
++	if (load_factor > 1000)
++		vdeadline_delta_ns = (vdeadline_delta_ns *load_factor *
++				      LAVD_LOAD_FACTOR_FT) / 1000;
+ 
+ 	taskc->vdeadline_delta_ns = vdeadline_delta_ns;
+ 	return vdeadline_delta_ns;
+@@ -2372,31 +2360,16 @@ static bool is_kernel_task(struct task_struct *p)
+ 	return p->flags & PF_KTHREAD;
+ }
+ 
+-static bool use_full_cpus(void)
+-{
+-	struct sys_stat *stat_cur = get_sys_stat_cur();
+-	return no_core_compaction ||
+-	       ((stat_cur->nr_active + LAVD_TC_NR_OVRFLW) >= nr_cpus_onln);
+-}
+-
+ void BPF_STRUCT_OPS(lavd_dispatch, s32 cpu, struct task_struct *prev)
+ {
+ 	struct bpf_cpumask *active, *ovrflw;
+ 	struct task_struct *p;
+ 
+-	/*
+-	 * If all CPUs are using, directly consume without checking CPU masks.
+-	 */
+-	if (use_full_cpus()) {
+-		scx_bpf_consume(LAVD_GLOBAL_DSQ);
+-		return;
+-	}
++	bpf_rcu_read_lock();
+ 
+ 	/*
+ 	 * Prepare cpumasks.
+ 	 */
+-	bpf_rcu_read_lock();
+-
+ 	active = active_cpumask;
+ 	ovrflw = ovrflw_cpumask;
+ 	if (!active || !ovrflw) {
