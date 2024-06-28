@@ -1,4 +1,4 @@
-%global commit b18ebfea9180fbcffef96dccead92dc0499cbb41
+%global commit 01287afb3e98e8b3cae07d5892d2ff9a5b9d4e00
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
@@ -9,7 +9,7 @@ Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
-URL:            https://github.com/sched-ext/scx
+URL:            https://github.com/1Naim/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
 
 BuildRequires:  gcc
