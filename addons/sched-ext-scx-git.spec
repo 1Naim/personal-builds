@@ -1,4 +1,4 @@
-%global commit b18ebfea9180fbcffef96dccead92dc0499cbb41
+%global commit 20a7c14c3a0679ca4e19b62f65192e932155128e
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
@@ -9,9 +9,8 @@ Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
-URL:            https://github.com/sched-ext/scx
+URL:            https://github.com/1Naim/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-Patch0:         0001-add-bpfland.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
@@ -42,8 +41,6 @@ sched_ext is a Linux kernel feature which enables implementing kernel thread sch
 
 %prep
 %autosetup -n scx-%{commit}
-
-patch -p1 -i %{PATCH0} -d %{_builddir}/scx-%{commit}
 
 %build
 %meson \
