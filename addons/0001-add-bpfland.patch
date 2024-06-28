@@ -1,43 +1,100 @@
-diff --git a/meson-scripts/stress_tests.ini b/meson-scripts/stress_tests.ini
-index 9f9ace3..4d1e992 100644
---- a/meson-scripts/stress_tests.ini
-+++ b/meson-scripts/stress_tests.ini
-@@ -15,3 +15,9 @@ sched: scx_rustland
- sched_args:
- stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
- timeout_sec: 15
-+
-+[scx_bpfland]
-+sched: scx_bpfland
-+sched_args:
-+stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
-+timeout_sec: 15
-diff --git a/meson-scripts/test_sched b/meson-scripts/test_sched
-index 8ffd840..7a26784 100755
---- a/meson-scripts/test_sched
-+++ b/meson-scripts/test_sched
-@@ -16,7 +16,7 @@ GUEST_TIMEOUT=60
- #   - scx_layered: temporarily excluded because it
- #     cannot run with a default configuration
- #
--SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland"
-+SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland scx_bpfland"
- 
- if [ ! -x `which vng` ]; then
-     echo "vng not found, please install virtme-ng to enable testing"
-diff --git a/rust/scx_utils/src/compat.rs b/rust/scx_utils/src/compat.rs
-index 1f5a443..bb99ab3 100644
---- a/rust/scx_utils/src/compat.rs
-+++ b/rust/scx_utils/src/compat.rs
-@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
- fn load_vmlinux_btf() -> &'static mut btf {
-     let btf = unsafe { btf__load_vmlinux_btf() };
-     if btf.is_null() {
--        panic!("btf__load_vmlinux_btf() returned NULL, was CONFIG_DEBUG_INFO_BTF enabled?")
-+        panic!("btf__load_vmlinux_btf() returned NULL");
-     }
-     unsafe { &mut *btf }
- }
+From 5a44329d45dfce738a323ccb0d46e75c50371b78 Mon Sep 17 00:00:00 2001
+From: Andrea Righi <andrea.righi@canonical.com>
+Date: Mon, 24 Jun 2024 07:56:03 +0200
+Subject: [PATCH 1/3] scheds: introduce scx_bpfland
+
+Overview
+========
+
+This scheduler is derived from scx_rustland, but it is fully implemented
+in BFP with minimal user-space Rust part to process command line
+options, collect metrics and logs out scheduling statistics.
+
+Unlike scx_rustland, all scheduling decisions are made by the BPF
+component.
+
+Motivation
+==========
+
+The primary goal of this scheduler is to act as a performance baseline
+for comparison with scx_rustland, allowing for a better assessment of
+the overhead caused by kernel/user-space interactions.
+
+It can also be used to deploy prototypes initially tested in the
+scx_rustland scheduler. In fact, this scheduler is expected to
+outperform scx_rustland, due to the elimitation of the kernel/user-space
+overhead.
+
+Scheduling policy
+=================
+
+scx_bpfland is a vruntime-based sched_ext scheduler that prioritizes
+interactive workloads. Its scheduling policy closely mirrors
+scx_rustland, but it has been re-implemented in BPF with some small
+adjustments.
+
+Tasks are categorized as either interactive or regular based on their
+average rate of voluntary context switches per second: tasks that exceed
+a specific voluntary context switch threshold are classified as
+interactive.
+
+Interactive tasks are prioritized in a higher-priority DSQ, while
+regular tasks are placed in a lower-priority DSQ. Within each queue,
+tasks are sorted based on their weighted runtime, using the built-in scx
+vtime ordering capabilities (scx_bpf_dispatch_vtime()).
+
+Moreover, each task gets a time slice budget. When a task is dispatched,
+it receives a time slice equivalent to the remaining unused portion of
+its previously allocated time slice (with a minimum threshold applied).
+
+This gives latency-sensitive workloads more chances to exceed their time
+slice when needed to perform short bursts of CPU activity without being
+interrupted (i.e., real-time audio encoding / decoding workloads).
+
+Results
+=======
+
+According to the initial test results, using the same benchmark "playing
+a videogame while recompiling the kernel", this scheduler seems to
+provide a +5% improvement in the frames-per-second (fps) compared to
+scx_rustland, with video games such as Cyberpunk 2077, Counter-Strike 2
+and Baldur's Gate 3.
+
+Initial test results indicate that this scheduler offers around a +5%
+improvement in frames-per-second (fps) compared to scx_rustland when
+using the benchmark "playing a video game while recompiling the kernel".
+
+This improvement was observed in games such as Cyberpunk 2077,
+Counter-Strike 2, and Baldur's Gate 3.
+
+Signed-off-by: Andrea Righi <andrea.righi@canonical.com>
+---
+ scheds/rust/README.md                      |   1 +
+ scheds/rust/meson.build                    |   1 +
+ scheds/rust/scx_bpfland/Cargo.toml         |  25 +
+ scheds/rust/scx_bpfland/LICENSE            |   1 +
+ scheds/rust/scx_bpfland/README.md          |  46 ++
+ scheds/rust/scx_bpfland/build.rs           |  13 +
+ scheds/rust/scx_bpfland/meson.build        |   8 +
+ scheds/rust/scx_bpfland/rustfmt.toml       |   8 +
+ scheds/rust/scx_bpfland/src/bpf/intf.h     |  35 ++
+ scheds/rust/scx_bpfland/src/bpf/main.bpf.c | 561 +++++++++++++++++++++
+ scheds/rust/scx_bpfland/src/bpf_intf.rs    |  12 +
+ scheds/rust/scx_bpfland/src/bpf_skel.rs    |   8 +
+ scheds/rust/scx_bpfland/src/main.rs        | 278 ++++++++++
+ 13 files changed, 997 insertions(+)
+ create mode 100644 scheds/rust/scx_bpfland/Cargo.toml
+ create mode 120000 scheds/rust/scx_bpfland/LICENSE
+ create mode 100644 scheds/rust/scx_bpfland/README.md
+ create mode 100644 scheds/rust/scx_bpfland/build.rs
+ create mode 100644 scheds/rust/scx_bpfland/meson.build
+ create mode 100644 scheds/rust/scx_bpfland/rustfmt.toml
+ create mode 100644 scheds/rust/scx_bpfland/src/bpf/intf.h
+ create mode 100644 scheds/rust/scx_bpfland/src/bpf/main.bpf.c
+ create mode 100644 scheds/rust/scx_bpfland/src/bpf_intf.rs
+ create mode 100644 scheds/rust/scx_bpfland/src/bpf_skel.rs
+ create mode 100644 scheds/rust/scx_bpfland/src/main.rs
+
 diff --git a/scheds/rust/README.md b/scheds/rust/README.md
 index 074bd2e..d6319a5 100644
 --- a/scheds/rust/README.md
@@ -240,10 +297,10 @@ index 0000000..ad8c9a3
 +#endif /* __INTF_H */
 diff --git a/scheds/rust/scx_bpfland/src/bpf/main.bpf.c b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
 new file mode 100644
-index 0000000..62b62a1
+index 0000000..ce6a136
 --- /dev/null
 +++ b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
-@@ -0,0 +1,570 @@
+@@ -0,0 +1,561 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>
@@ -286,15 +343,6 @@ index 0000000..62b62a1
 + * Time slice used when system is over commissioned.
 + */
 +const volatile u64 slice_ns_min = 500000;
-+
-+/*
-+ * Maximum time slice lag.
-+ *
-+ * Increasing this value can help to increase the responsiveness of interactive
-+ * tasks at the cost of making regular and newly created tasks less responsive
-+ * (0 = disabled).
-+ */
-+const volatile u64 slice_ns_lag;
 +
 +/*
 + * Enable built-in idle selection logic.
@@ -412,11 +460,11 @@ index 0000000..62b62a1
 +	u64 vtime = p->scx.dsq_vtime;
 +
 +	/*
-+	 * Limit the vruntime to (vtime_now - slice_ns_lag) to avoid penalizing
++	 * Limit the vruntime to (vtime_now - slice_ns) to avoid penalizing
 +	 * tasks too much (this helps to speed up new fork'ed tasks).
 +	 */
-+	if (vtime_before(vtime, vtime_now - slice_ns_lag))
-+		vtime = vtime_now - slice_ns_lag;
++	if (vtime_before(vtime, vtime_now - slice_ns))
++		vtime = vtime_now - slice_ns;
 +
 +	return vtime;
 +}
@@ -848,10 +896,10 @@ index 0000000..9a10102
 +include!(concat!(env!("OUT_DIR"), "/bpf_skel.rs"));
 diff --git a/scheds/rust/scx_bpfland/src/main.rs b/scheds/rust/scx_bpfland/src/main.rs
 new file mode 100644
-index 0000000..9352712
+index 0000000..c52b32d
 --- /dev/null
 +++ b/scheds/rust/scx_bpfland/src/main.rs
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,278 @@
 +// SPDX-License-Identifier: GPL-2.0
 +//
 +// Copyright (c) 2024 Andrea Righi <righi.andrea@gmail.com>.
@@ -917,13 +965,6 @@ index 0000000..9352712
 +    /// Minimum scheduling slice duration in microseconds.
 +    #[clap(short = 'S', long, default_value = "500")]
 +    slice_us_min: u64,
-+
-+    /// Maximum time slice lag in microseconds.
-+    ///
-+    /// Increasing this value can help to increase the responsiveness of interactive tasks at the
-+    /// cost of making regular and newly created tasks less responsive (0 = disabled).
-+    #[clap(short = 'l', long, default_value = "0")]
-+    slice_us_lag: u64,
 +
 +    /// Threshold of voluntary context switch per second, used to classify interactive tasks
 +    /// (0 = disable interactive tasks classification).
@@ -1022,7 +1063,6 @@ index 0000000..9352712
 +        skel.rodata_mut().smt_enabled = smt_enabled;
 +        skel.rodata_mut().slice_ns = opts.slice_us * 1000;
 +        skel.rodata_mut().slice_ns_min = opts.slice_us_min * 1000;
-+        skel.rodata_mut().slice_ns_lag = opts.slice_us_lag * 1000;
 +        skel.rodata_mut().nvcsw_thresh = opts.nvcsw_thresh;
 +        skel.rodata_mut().builtin_idle = opts.builtin_idle;
 +
@@ -1138,127 +1178,134 @@ index 0000000..9352712
 +
 +    Ok(())
 +}
-diff --git a/scheds/rust/scx_lavd/src/bpf/intf.h b/scheds/rust/scx_lavd/src/bpf/intf.h
-index a909fae..630898f 100644
---- a/scheds/rust/scx_lavd/src/bpf/intf.h
-+++ b/scheds/rust/scx_lavd/src/bpf/intf.h
-@@ -62,8 +62,8 @@ enum consts {
- 	LAVD_SLICE_UNDECIDED		= SCX_SLICE_INF,
- 	LAVD_SLICE_GREEDY_FT		= 3,
- 	LAVD_LOAD_FACTOR_ADJ		= 6, /* adjustment for better estimation */
--	LAVD_LOAD_FACTOR_MAX		= (20 * 1000),
--	LAVD_LOAD_FACTOR_FT		= 80, /* factor to stretch the time line */
-+	LAVD_LOAD_FACTOR_MAX		= (10 * 1000),
-+	LAVD_LOAD_FACTOR_FT		= 4, /* factor to stretch the time line */
- 
- 	LAVD_LC_FREQ_MAX		= 1000000,
- 	LAVD_LC_RUNTIME_MAX		= LAVD_TARGETED_LATENCY_NS,
-@@ -75,7 +75,6 @@ enum consts {
- 	LAVD_SLICE_BOOST_MAX_STEP	= 8, /* 8 slice exhausitions in a row */
- 	LAVD_GREEDY_RATIO_MAX		= USHRT_MAX,
- 	LAVD_LAT_PRIO_IDLE		= USHRT_MAX,
--	LAVD_LAT_WEIGHT_SHIFT		= 3,
- 
- 	LAVD_ELIGIBLE_TIME_LAT_FT	= 16,
- 	LAVD_ELIGIBLE_TIME_MAX		= (100 * NSEC_PER_USEC),
-diff --git a/scheds/rust/scx_lavd/src/bpf/main.bpf.c b/scheds/rust/scx_lavd/src/bpf/main.bpf.c
-index 094b5f5..7cadfb7 100644
---- a/scheds/rust/scx_lavd/src/bpf/main.bpf.c
-+++ b/scheds/rust/scx_lavd/src/bpf/main.bpf.c
-@@ -370,20 +370,19 @@ static const u64 sched_prio_to_slice_weight[NICE_WIDTH] = {
-  * It is used to determine the virtual deadline. Each step increases by 10%.
-  * The idea behind the virtual deadline is to limit the competition window
-  * among concurrent tasks. For example, in the case of a normal priority task
-- * with nice 0, its corresponding value is 7.5 msec (when LAVD_LAT_WEIGHT_SHIFT
-- * is 0). This guarantees that any tasks enqueued in 7.5 msec after the task is
-- * enqueued will not compete for CPU time with the task. This array is the
-- * inverse of sched_prio_to_latency_weight with some normalization. Suppose the
-- * maximum time slice per schedule (LAVD_SLICE_MAX_NS) is 3 msec. We normalized
-- * the values so that the normal priority (nice 0) has a deadline of 7.5 msec,
-- * a center of the targeted latency (i.e., when LAVD_TARGETED_LATENCY_NS is 15
-+ * with nice 0, its corresponding value is 7.5 msec. This guarantees that any
-+ * tasks enqueued in 7.5 msec after the task is enqueued will not compete for
-+ * CPU time with the task. This array is the inverse of
-+ * sched_prio_to_latency_weight with some normalization. Suppose the maximum
-+ * time slice per schedule (LAVD_SLICE_MAX_NS) is 3 msec. We normalized the
-+ * values so that the normal priority (nice 0) has a deadline of 7.5 msec, a
-+ * center of the targeted latency (i.e., when LAVD_TARGETED_LATENCY_NS is 15
-  * msec). The virtual deadline ranges from 87 usec to 512 msec. As the maximum
-  * time slice becomes shorter, the deadlines become tighter.
+-- 
+2.45.2
+
+
+From 7606b951503e6ca2db99804ea7624ae687926ec6 Mon Sep 17 00:00:00 2001
+From: Andrea Righi <andrea.righi@canonical.com>
+Date: Thu, 27 Jun 2024 17:21:58 +0200
+Subject: [PATCH 2/3] scx_bpfland: introduce maximum time slice lag
+
+Introduce a tunable to set a limit of the minimum vruntime that is used
+when a task is dispatched, as:
+
+ vtime_min = vtime_now - slice_lag_ns
+
+Increasing the time slice lag can make interactive tasks even more
+responsive at the cost of starving regular and newly created tasks.
+
+Default time slice lag is 0.
+
+Signed-off-by: Andrea Righi <andrea.righi@canonical.com>
+---
+ scheds/rust/scx_bpfland/src/bpf/main.bpf.c | 15 ++++++++++++---
+ scheds/rust/scx_bpfland/src/main.rs        |  8 ++++++++
+ 2 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/scheds/rust/scx_bpfland/src/bpf/main.bpf.c b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
+index ce6a136..62b62a1 100644
+--- a/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
++++ b/scheds/rust/scx_bpfland/src/bpf/main.bpf.c
+@@ -41,6 +41,15 @@ const volatile u64 slice_ns = SCX_SLICE_DFL;
   */
- static const u64 sched_prio_to_latency_weight[NICE_WIDTH] = {
- 	/* weight	nice priority	sched priority	vdeadline (usec)    */
- 	/*						(max slice == 3 ms) */
--	/*                                              (LAVD_LAT_WEIGHT_SHIFT == 0) */
- 	/* ------	-------------	--------------	------------------- */
- 	    29,		/* -20		 0		    87 */
- 	    36,		/* -19		 1		   108 */
-@@ -1449,12 +1448,7 @@ static u64 calc_latency_weight(struct task_struct *p, struct task_ctx *taskc,
- 			       struct cpu_ctx *cpuc, bool is_wakeup)
- {
- 	boost_lat(p, taskc, cpuc, is_wakeup);
--
--	/*
--	 * Tighten the competition window according to LAVD_LAT_WEIGHT_SHIFT.
--	 */
--	return sched_prio_to_latency_weight[taskc->lat_prio] >>
--	       LAVD_LAT_WEIGHT_SHIFT;
-+	return sched_prio_to_latency_weight[taskc->lat_prio];
- }
+ const volatile u64 slice_ns_min = 500000;
  
- static u64 calc_virtual_deadline_delta(struct task_struct *p,
-@@ -1485,17 +1479,11 @@ static u64 calc_virtual_deadline_delta(struct task_struct *p,
++/*
++ * Maximum time slice lag.
++ *
++ * Increasing this value can help to increase the responsiveness of interactive
++ * tasks at the cost of making regular and newly created tasks less responsive
++ * (0 = disabled).
++ */
++const volatile u64 slice_ns_lag;
++
+ /*
+  * Enable built-in idle selection logic.
+  */
+@@ -157,11 +166,11 @@ static inline u64 task_vtime(struct task_struct *p)
+ 	u64 vtime = p->scx.dsq_vtime;
  
  	/*
- 	 * When a system is overloaded (>1000), stretch time space so make time
--	 * tick logically slower to give room to execute the overloaded tasks.
-+	 * tick slower to give room to execute the overloaded tasks.
+-	 * Limit the vruntime to (vtime_now - slice_ns) to avoid penalizing
++	 * Limit the vruntime to (vtime_now - slice_ns_lag) to avoid penalizing
+ 	 * tasks too much (this helps to speed up new fork'ed tasks).
  	 */
--	if (load_factor > 1000) {
--		/*
--		 * The time space is stretched more if task's latency priority
--		 * is lower (i.e., higher value) and the load is higher.
--		 */
--		vdeadline_delta_ns = (vdeadline_delta_ns * load_factor *
--				      taskc->lat_prio * taskc->lat_prio) /
--				     (LAVD_LOAD_FACTOR_FT * 1000);
--	}
-+	if (load_factor > 1000)
-+		vdeadline_delta_ns = (vdeadline_delta_ns *load_factor *
-+				      LAVD_LOAD_FACTOR_FT) / 1000;
+-	if (vtime_before(vtime, vtime_now - slice_ns))
+-		vtime = vtime_now - slice_ns;
++	if (vtime_before(vtime, vtime_now - slice_ns_lag))
++		vtime = vtime_now - slice_ns_lag;
  
- 	taskc->vdeadline_delta_ns = vdeadline_delta_ns;
- 	return vdeadline_delta_ns;
-@@ -2372,31 +2360,16 @@ static bool is_kernel_task(struct task_struct *p)
- 	return p->flags & PF_KTHREAD;
+ 	return vtime;
  }
+diff --git a/scheds/rust/scx_bpfland/src/main.rs b/scheds/rust/scx_bpfland/src/main.rs
+index c52b32d..9352712 100644
+--- a/scheds/rust/scx_bpfland/src/main.rs
++++ b/scheds/rust/scx_bpfland/src/main.rs
+@@ -64,6 +64,13 @@ struct Opts {
+     #[clap(short = 'S', long, default_value = "500")]
+     slice_us_min: u64,
  
--static bool use_full_cpus(void)
--{
--	struct sys_stat *stat_cur = get_sys_stat_cur();
--	return no_core_compaction ||
--	       ((stat_cur->nr_active + LAVD_TC_NR_OVRFLW) >= nr_cpus_onln);
--}
--
- void BPF_STRUCT_OPS(lavd_dispatch, s32 cpu, struct task_struct *prev)
- {
- 	struct bpf_cpumask *active, *ovrflw;
- 	struct task_struct *p;
++    /// Maximum time slice lag in microseconds.
++    ///
++    /// Increasing this value can help to increase the responsiveness of interactive tasks at the
++    /// cost of making regular and newly created tasks less responsive (0 = disabled).
++    #[clap(short = 'l', long, default_value = "0")]
++    slice_us_lag: u64,
++
+     /// Threshold of voluntary context switch per second, used to classify interactive tasks
+     /// (0 = disable interactive tasks classification).
+     #[clap(short = 'c', long, default_value = "10")]
+@@ -161,6 +168,7 @@ impl<'a> Scheduler<'a> {
+         skel.rodata_mut().smt_enabled = smt_enabled;
+         skel.rodata_mut().slice_ns = opts.slice_us * 1000;
+         skel.rodata_mut().slice_ns_min = opts.slice_us_min * 1000;
++        skel.rodata_mut().slice_ns_lag = opts.slice_us_lag * 1000;
+         skel.rodata_mut().nvcsw_thresh = opts.nvcsw_thresh;
+         skel.rodata_mut().builtin_idle = opts.builtin_idle;
  
--	/*
--	 * If all CPUs are using, directly consume without checking CPU masks.
--	 */
--	if (use_full_cpus()) {
--		scx_bpf_consume(LAVD_GLOBAL_DSQ);
--		return;
--	}
-+	bpf_rcu_read_lock();
+-- 
+2.45.2
+
+
+From 188b3d3bfc8efa9079f53165fa75114d745973f2 Mon Sep 17 00:00:00 2001
+From: Andrea Righi <andrea.righi@canonical.com>
+Date: Tue, 25 Jun 2024 16:17:14 +0200
+Subject: [PATCH 3/3] ci: enable stress tests for scx_bpfland
+
+Signed-off-by: Andrea Righi <andrea.righi@canonical.com>
+---
+ meson-scripts/stress_tests.ini | 6 ++++++
+ meson-scripts/test_sched       | 2 +-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/meson-scripts/stress_tests.ini b/meson-scripts/stress_tests.ini
+index 9f9ace3..4d1e992 100644
+--- a/meson-scripts/stress_tests.ini
++++ b/meson-scripts/stress_tests.ini
+@@ -15,3 +15,9 @@ sched: scx_rustland
+ sched_args:
+ stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
+ timeout_sec: 15
++
++[scx_bpfland]
++sched: scx_bpfland
++sched_args:
++stress_cmd: stress-ng -t 14 --aggressive -M -c `nproc` -f `nproc`
++timeout_sec: 15
+diff --git a/meson-scripts/test_sched b/meson-scripts/test_sched
+index 8ffd840..7a26784 100755
+--- a/meson-scripts/test_sched
++++ b/meson-scripts/test_sched
+@@ -16,7 +16,7 @@ GUEST_TIMEOUT=60
+ #   - scx_layered: temporarily excluded because it
+ #     cannot run with a default configuration
+ #
+-SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland"
++SCHEDULERS="scx_simple scx_central scx_flatcg scx_nest scx_pair scx_rusty scx_rustland scx_bpfland"
  
- 	/*
- 	 * Prepare cpumasks.
- 	 */
--	bpf_rcu_read_lock();
--
- 	active = active_cpumask;
- 	ovrflw = ovrflw_cpumask;
- 	if (!active || !ovrflw) {
+ if [ ! -x `which vng` ]; then
+     echo "vng not found, please install virtme-ng to enable testing"
+-- 
+2.45.2
+

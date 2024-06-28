@@ -11,7 +11,7 @@ Summary:        Sched_ext Schedulers and Tools
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-Patch0:         bpfland.patch
+Patch0:         0001-add-bpfland.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
@@ -43,7 +43,7 @@ sched_ext is a Linux kernel feature which enables implementing kernel thread sch
 %prep
 %autosetup -n scx-%{commit}
 
-patch -p1 -i %{PATCH0} -d %{_builddir}/scx-%{commit}/scheds/rust
+patch -p1 -i %{PATCH0}
 
 %build
 %meson \
