@@ -62,8 +62,9 @@ Source2: https://github.com/NVIDIA/open-gpu-kernel-modules/archive/%{_nv_ver}/%{
 Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all.patch
 Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-sched-ext.patch
 Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
-Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
-Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
+Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/0001-hardened.patch
+Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
+Patch5: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
 # Dev patches
 #Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all-dev.patch
 #Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched-dev/0001-bore-cachy.patch
@@ -266,9 +267,12 @@ patch -p1 -i %{PATCH1}
 # Apply EEVDF and BORE patches
 patch -p1 -i %{PATCH2}
 
+# Apply linux-hardened patch
+patch -p1 -i %{PATCH3}
+
 # Apply patches for nvidia-open package
-patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
-patch -p1 -i %{PATCH4} -d %{_builddir}/%{_nv_open_pkg}/
+patch -p1 -i %{PATCH4} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
+patch -p1 -i %{PATCH5} -d %{_builddir}/%{_nv_open_pkg}/
 
 # Fetch the config and move it to the proper directory
 cp %{SOURCE1} .config
