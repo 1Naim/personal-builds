@@ -27,7 +27,7 @@ cp %{_builddir}/ananicy-rules-%{commit}/00-cgroups.cgroups %{buildroot}/etc/anan
 cp %{_builddir}/ananicy-rules-%{commit}/00-types.types %{buildroot}/etc/ananicy.d/ -r
 cp %{_builddir}/ananicy-rules-%{commit}/ananicy.conf %{buildroot}/etc/ananicy.d/ -r
 
-%files rules
+%files
 %defattr(-,root,root,-)
 /etc/ananicy.d/*
 
