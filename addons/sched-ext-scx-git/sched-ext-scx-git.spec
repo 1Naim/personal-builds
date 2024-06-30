@@ -5,7 +5,7 @@
 
 Name:           sched-ext-scx-git
 Version:        20240629.r%{shortcommit}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
@@ -35,6 +35,9 @@ Requires:  elfutils-libelf
 Requires:  zlib
 Requires:  jq
 Conflicts: shed-ext-scx
+
+%define __spec_install_post /usr/lib/rpm/brp-compress || :
+%define debug_package %{nil}
 
 %description
 sched_ext is a Linux kernel feature which enables implementing kernel thread schedulers in BPF and dynamically loading them. This repository contains various scheduler implementations and support utilities.
