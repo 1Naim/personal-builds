@@ -5,7 +5,7 @@
 
 Name:           ananicy-cpp-rules
 Version:        20240629.r%{shortcommit}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        List of rules used to assign specific nice values to specific processes
 
 License:        GPL=3.0
@@ -13,6 +13,9 @@ URL:            https://github.com/CachyOS/ananicy-rules
 Source0:        %{URL}/archive/%{commit}/ananicy-rules-%{commit}.tar.gz
 
 Requires: ananicy-cpp
+
+%define __spec_install_post /usr/lib/rpm/brp-compress || :
+%define debug_package %{nil}
 
 %description
 List of rules used to assign specific nice values to specific processes
