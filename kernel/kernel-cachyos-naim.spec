@@ -30,7 +30,7 @@
 %endif
 
 # Nvidia Stuff
-%define _nv_ver 555.58
+%define _nv_ver 555.58.02
 %define _nv_open_pkg open-gpu-kernel-modules-%{_nv_ver}
 
 %define flavor cachyos-naim
@@ -41,7 +41,7 @@ Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 %define _stablekver 7
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 3
+%define customver 4
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
