@@ -1,0 +1,45 @@
+From ff7900812c5318f7c78fb5fff347f22e681e9f6c Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <superm1@gmail.com>
+Date: Fri, 12 Apr 2024 14:08:30 -0500
+Subject: [PATCH] Apply additional systemd hardening options
+
+---
+ data/power-profiles-daemon.service.in | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/data/power-profiles-daemon.service.in b/data/power-profiles-daemon.service.in
+index df6cfec..73be207 100644
+--- a/data/power-profiles-daemon.service.in
++++ b/data/power-profiles-daemon.service.in
+@@ -13,13 +13,17 @@ Restart=on-failure
+ StateDirectory=power-profiles-daemon
+ 
+ # Lockdown
++CapabilityBoundingSet=CAP_SYS_ADMIN
+ DevicePolicy=closed
++IPAddressDeny=any
+ KeyringMode=private
+ LockPersonality=yes
+ MemoryDenyWriteExecute=yes
+ NoNewPrivileges=yes
+ PrivateDevices=yes
+ PrivateTmp=yes
++PrivateNetwork=yes
++PrivateUsers=yes
+ ProtectClock=yes
+ ProtectControlGroups=yes
+ ProtectHome=yes
+@@ -35,6 +39,10 @@ RestrictRealtime=true
+ RestrictNamespaces=yes
+ RestrictRealtime=yes
+ RestrictSUIDSGID=yes
++SystemCallFilter=@system-service
++SystemCallFilter=~@resources @privileged
++SystemCallErrorNumber=EPERM
++SystemCallArchitectures=native
+ 
+ [Install]
+ WantedBy=graphical.target
+-- 
+GitLab
+

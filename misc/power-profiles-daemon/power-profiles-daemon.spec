@@ -5,13 +5,14 @@ Version:        0.21
 %forgemeta
 
 Name:           power-profiles-daemon
-Release:        6%{?dist}
+Release:        7%{?dist}
 Summary:        Makes power profiles handling available over D-Bus
 
 License:        GPL-3.0-or-later
 URL:            %{forgeurl}
 Source0:        %{forgesource}
 Patch1:         amd-cpb-boost.patch
+Patch2:         apply-systemd-hardened.patch
 
 BuildRequires:  meson
 BuildRequires:  gcc
