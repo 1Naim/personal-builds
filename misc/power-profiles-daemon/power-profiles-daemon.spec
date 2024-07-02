@@ -1,12 +1,11 @@
 %global forgeurl    https://gitlab.freedesktop.org/upower/%{name}
 %global _default_patch_fuzz 2
-%global _default_patch_strip 1
 
 Version:        0.21
 %forgemeta
 
 Name:           power-profiles-daemon
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        Makes power profiles handling available over D-Bus
 
 License:        GPL-3.0-or-later
@@ -47,7 +46,7 @@ BuildArch:      noarch
 This package contains the documentation for %{name}.
 
 %prep
-%forgeautosetup
+%forgeautosetup -p1
 
 %build
 %meson \
