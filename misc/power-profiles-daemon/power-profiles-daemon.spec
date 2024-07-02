@@ -1,5 +1,6 @@
 %global forgeurl    https://gitlab.freedesktop.org/upower/%{name}
 %global _default_patch_fuzz 2
+%global _default_patch_strip 1
 
 Version:        0.21
 %forgemeta
