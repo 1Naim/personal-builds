@@ -1,0 +1,154 @@
+From 05867e84a46c17b81fc8316d0080ba65ccf756e4 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <superm1@gmail.com>
+Date: Sat, 27 Apr 2024 12:52:28 -0500
+Subject: [PATCH] amd-pstate: Add support for core performance boost
+
+Apply core performance boost in balanced and performance and
+disable it when in power saver.
+---
+ src/ppd-driver-amd-pstate.c | 24 +++++++++++++
+ tests/integration_test.py   | 68 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 92 insertions(+)
+
+diff --git a/src/ppd-driver-amd-pstate.c b/src/ppd-driver-amd-pstate.c
+index 55635b0..29e6cb4 100644
+--- a/src/ppd-driver-amd-pstate.c
++++ b/src/ppd-driver-amd-pstate.c
+@@ -183,6 +183,21 @@ profile_to_epp_pref (PpdProfile profile, gboolean battery)
+   g_return_val_if_reached (NULL);
+ }
+ 
++static const char *
++profile_to_cpb_pref (PpdProfile profile)
++{
++  switch (profile) {
++  case PPD_PROFILE_POWER_SAVER:
++    return "0";
++  case PPD_PROFILE_BALANCED:
++  case PPD_PROFILE_PERFORMANCE:
++    return "1";
++  }
++
++  g_return_val_if_reached (NULL);
++
++}
++
+ static gboolean
+ apply_pref_to_devices (GPtrArray   *devices,
+                        PpdProfile   profile,
+@@ -191,17 +206,20 @@ apply_pref_to_devices (GPtrArray   *devices,
+ {
+   const char *epp_pref;
+   const char *gov_pref;
++  const char *cpb_pref;
+ 
+   if (profile == PPD_PROFILE_UNSET)
+     return TRUE;
+ 
+   epp_pref = profile_to_epp_pref (profile, battery);
+   gov_pref = profile_to_gov_pref (profile);
++  cpb_pref = profile_to_cpb_pref (profile);
+ 
+   for (guint i = 0; i < devices->len; ++i) {
+     const char *base = g_ptr_array_index (devices, i);
+     g_autofree char *epp = NULL;
+     g_autofree char *gov = NULL;
++    g_autofree char *cpb = NULL;
+ 
+     gov = g_build_filename (base,
+                             "scaling_governor",
+@@ -216,6 +234,12 @@ apply_pref_to_devices (GPtrArray   *devices,
+ 
+     if (!ppd_utils_write (epp, epp_pref, error))
+       return FALSE;
++
++    cpb = g_build_filename (base, "boost", NULL);
++    if (g_file_test (cpb, G_FILE_TEST_EXISTS)) {
++      if (!ppd_utils_write (cpb, cpb_pref, error))
++        return FALSE;
++    }
+   }
+ 
+   return TRUE;
+diff --git a/tests/integration_test.py b/tests/integration_test.py
+index d9b27c7..3833116 100644
+--- a/tests/integration_test.py
++++ b/tests/integration_test.py
+@@ -1140,6 +1140,74 @@ class Tests(dbusmock.DBusTestCase):
+         self.assert_file_eventually_contains(energy_prefs, "power")
+         self.assert_file_eventually_contains(scaling_governor, "powersave")
+ 
++    # pylint: disable=too-many-statements
++    def test_amd_pstate_boost(self):
++        """AMD P-State driver boost support"""
++
++        # Create 2 CPUs with preferences
++        dir1 = os.path.join(
++            self.testbed.get_root_dir(), "sys/devices/system/cpu/cpufreq/policy0/"
++        )
++        os.makedirs(dir1)
++        self.write_file_contents(os.path.join(dir1, "boost"), "1\n")
++        self.write_file_contents(os.path.join(dir1, "scaling_governor"), "powersave\n")
++        self.write_file_contents(
++            os.path.join(dir1, "energy_performance_preference"), "performance\n"
++        )
++        dir2 = os.path.join(
++            self.testbed.get_root_dir(), "sys/devices/system/cpu/cpufreq/policy1/"
++        )
++        os.makedirs(dir2)
++        self.write_file_contents(os.path.join(dir2, "boost"), "1\n")
++        self.write_file_contents(os.path.join(dir2, "scaling_governor"), "powersave\n")
++        self.write_file_contents(
++            os.path.join(dir2, "energy_performance_preference"), "performance\n"
++        )
++
++        # Create AMD P-State configuration
++        pstate_dir = os.path.join(
++            self.testbed.get_root_dir(), "sys/devices/system/cpu/amd_pstate"
++        )
++        os.makedirs(pstate_dir)
++        self.write_file_contents(os.path.join(pstate_dir, "status"), "active\n")
++
++        # desktop PM profile
++        dir3 = os.path.join(self.testbed.get_root_dir(), "sys/firmware/acpi/")
++        os.makedirs(dir3)
++        self.write_file_contents(os.path.join(dir3, "pm_profile"), "1\n")
++
++        self.start_daemon()
++
++        profiles = self.get_dbus_property("Profiles")
++        self.assertEqual(len(profiles), 3)
++
++        self.assertEqual(profiles[0]["Driver"], "multiple")
++        self.assertEqual(profiles[0]["CpuDriver"], "amd_pstate")
++        self.assertEqual(profiles[0]["Profile"], "power-saver")
++
++        energy_prefs = os.path.join(dir2, "energy_performance_preference")
++        scaling_governor = os.path.join(dir2, "scaling_governor")
++        boost = os.path.join(dir2, "boost")
++
++        self.assert_file_eventually_contains(energy_prefs, "balance_performance")
++        self.assert_file_eventually_contains(scaling_governor, "powersave")
++
++        # Set performance mode
++        self.set_dbus_property("ActiveProfile", GLib.Variant.new_string("performance"))
++        self.assertEqual(self.get_dbus_property("ActiveProfile"), "performance")
++
++        self.assert_file_eventually_contains(energy_prefs, "performance")
++        self.assert_file_eventually_contains(scaling_governor, "performance")
++        self.assert_file_eventually_contains(boost, "1")
++
++        # Set powersave mode
++        self.set_dbus_property("ActiveProfile", GLib.Variant.new_string("power-saver"))
++        self.assertEqual(self.get_dbus_property("ActiveProfile"), "power-saver")
++
++        self.assert_file_eventually_contains(energy_prefs, "power")
++        self.assert_file_eventually_contains(scaling_governor, "powersave")
++        self.assert_file_eventually_contains(boost, "0")
++
+     def test_amd_pstate_balance(self):
+         """AMD P-State driver (balance)"""
+ 
+-- 
+GitLab
+
