@@ -5,12 +5,13 @@
 
 Name:           sched-ext-scx-git
 Version:        20240701.r%{shortcommit}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
+Patch0:         0001-bpfland-next.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
@@ -40,7 +41,7 @@ Conflicts: shed-ext-scx
 sched_ext is a Linux kernel feature which enables implementing kernel thread schedulers in BPF and dynamically loading them. This repository contains various scheduler implementations and support utilities.
 
 %prep
-%autosetup -n scx-%{commit}
+%autosetup -p1 -n scx-%{commit}
 
 %build
 %meson \
