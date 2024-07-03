@@ -5,7 +5,7 @@
 
 Name:           sched-ext-scx-git
 Version:        20240701.r%{shortcommit}
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
