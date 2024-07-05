@@ -1,17 +1,17 @@
-%global commit a72c9058a38f56b713d634214c2a3f3fde699705
+%global commit 86d2f502307fa37de110ff934f282017836158df
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
-Version:        20240701.r%{shortcommit}
-Release:        3%{?dist}
+Version:        20240704.r%{shortcommit}
+Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-Patch0:         0001-bpfland-next.patch
+# Patch0:         0001-bpfland-next.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
