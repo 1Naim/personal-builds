@@ -1,11 +1,11 @@
-%global commit 6801ed049d40436c4c6416a4226fd7236d0e91da
+%global commit 3f76b3f497e590c4b6a4f9316b212c627631399b
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           ananicy-cpp-rules
-Version:        20240629.r%{shortcommit}
-Release:        2%{?dist}
+Version:        20240703.r%{shortcommit}
+Release:        1%{?dist}
 Summary:        List of rules used to assign specific nice values to specific processes
 
 License:        GPL=3.0
