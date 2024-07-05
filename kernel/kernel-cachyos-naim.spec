@@ -38,10 +38,10 @@ Name: kernel%{?flavor:-%{flavor}}
 Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.9
-%define _stablekver 7
+%define _stablekver 8
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 4
+%define customver 1
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -283,6 +283,7 @@ scripts/config -e CACHY
 
 # Enable BORE Scheduler
 scripts/config -e SCHED_BORE
+scripts/config --set-val MIN_BASE_SLICE_NS 1000000
 
 # Enable sched-ext
 scripts/config -e SCHED_CLASS_EXT
