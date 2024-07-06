@@ -33,7 +33,7 @@
 %define _nv_ver 555.58.02
 %define _nv_open_pkg open-gpu-kernel-modules-%{_nv_ver}
 
-%define flavor cachyos-naim
+%define flavor cachyos-test
 Name: kernel%{?flavor:-%{flavor}}
 Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
