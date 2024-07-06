@@ -1,11 +1,10 @@
 %global forgeurl    https://gitlab.freedesktop.org/upower/%{name}
-%global _default_patch_fuzz 2
 
 Version:        0.21
 %forgemeta
 
 Name:           power-profiles-daemon
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Makes power profiles handling available over D-Bus
 
 License:        GPL-3.0-or-later
@@ -13,6 +12,7 @@ URL:            %{forgeurl}
 Source0:        %{forgesource}
 Patch1:         amd-cpb-boost.patch
 Patch2:         apply-systemd-hardened.patch
+Patch3:         amd-pstate-low-non-lin-perf.patch
 
 BuildRequires:  meson
 BuildRequires:  gcc
