@@ -41,7 +41,7 @@ Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 %define _stablekver 8
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 1
+%define customver 2
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -374,7 +374,7 @@ scripts/config -e HAVE_GCC_PLUGINS
 scripts/config -u DEFAULT_HOSTNAME
 
 # Enable SELinux (https://github.com/sirlucjan/copr-linux-cachyos/pull/1)
-scripts/config --set-str CONFIG_LSM “lockdown,yama,integrity,selinux,bpf,landlock”
+scripts/config --set-str CONFIG_LSM lockdown,yama,integrity,selinux,bpf,landlock
 
 # Set kernel version string as build salt
 scripts/config --set-str BUILD_SALT "%{kverstr}"
