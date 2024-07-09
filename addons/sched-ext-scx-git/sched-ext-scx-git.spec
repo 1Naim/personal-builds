@@ -1,10 +1,10 @@
-%global commit 3df7a13117d17669a953573b683d1116d328979e
+%global commit d3cd3f114b69a76f8e897d3c6a6482f64405e59e
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
-Version:        20240708.r%{shortcommit}
+Version:        20240709.r%{shortcommit}
 Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
