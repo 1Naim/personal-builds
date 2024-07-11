@@ -41,7 +41,7 @@ Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 %define _stablekver 8
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 2
+%define customver 5
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -661,7 +661,7 @@ if [ ! -z $(rpm -qa | grep grubby) ]; then
 fi
 
 %preun core
-/bin/kernel-install remove %{kverstr} /lib/modules/%{kverstr}/vmlinuz || exit $?
+/bin/kernel-install remove %{kverstr} || exit $?
 if [ -x /usr/sbin/weak-modules ]
 then
 /usr/sbin/weak-modules --remove-kernel %{kverstr} || exit $?
@@ -695,9 +695,9 @@ fi
 %ghost %attr(0600, root, root) /boot/initramfs-%{kverstr}.img
 %ghost %attr(0600, root, root) /boot/symvers-%{kverstr}.gz
 %ghost %attr(0644, root, root) /boot/config-%{kverstr}
-/boot/.vmlinuz-%{kverstr}.hmac
+%ghost /boot/.vmlinuz-%{kverstr}.hmac
+%dir /lib/modules
 %dir /lib/modules/%{kverstr}/
-%dir /lib/modules/%{kverstr}/kernel/
 /lib/modules/%{kverstr}/.vmlinuz.hmac
 /lib/modules/%{kverstr}/config
 /lib/modules/%{kverstr}/vmlinuz
@@ -717,7 +717,7 @@ fi
 %exclude /lib/modules/%{kverstr}/extra/nvidia
 
 %files nvidia-open
-/lib/modules/%{kverstr}/extra/nvidia/*
+/lib/modules/%{kverstr}/extra/nvidia/
 /usr/share/licenses/nvidia-open/COPYING
 
 %files headers
