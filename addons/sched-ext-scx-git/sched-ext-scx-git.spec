@@ -1,4 +1,4 @@
-%global commit efcc36988e26a11dc129b7c0333cc6c621dc0480
+%global commit 640bd562ff0bafad623d65f1743d22d7d7f895ae
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
@@ -12,6 +12,7 @@ License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
 # Patch0:         0001-bpfland-next.patch
+Patch1:         0001-lavd-vdeadline.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
