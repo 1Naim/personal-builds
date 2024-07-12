@@ -6,13 +6,13 @@
 
 Name:           sched-ext-scx-git
 Version:        20240712.r%{shortcommit}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-Patch1:         0001-lavd-metrics.patch
+# Patch1:         0001-lavd-metrics.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
@@ -57,7 +57,7 @@ sched_ext is a Linux kernel feature which enables implementing kernel thread sch
 
 
 %files
-%attr(0644,root,root) %ghost %config(noreplace) %{_sysconfdir}/default/scx
+%attr(0644,root,root) %config(noreplace) %{_sysconfdir}/default/scx
 %{_bindir}/*
 %{_prefix}/lib/systemd/system/scx.service
 %{_sysconfdir}/systemd/journald@sched-ext.conf
