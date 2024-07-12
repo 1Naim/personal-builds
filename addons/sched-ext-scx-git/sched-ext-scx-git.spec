@@ -1,18 +1,18 @@
-%global commit 640bd562ff0bafad623d65f1743d22d7d7f895ae
+%global _default_patch_fuzz 2
+%global commit 00fdc1d949aa4df12f4ac73b057fef27a11a6d60
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
-Version:        20240711.r%{shortcommit}
+Version:        20240712.r%{shortcommit}
 Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-# Patch0:         0001-bpfland-next.patch
-Patch1:         0001-lavd-vdeadline.patch
+Patch1:         0001-lavd-metrics.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
