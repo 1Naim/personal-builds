@@ -38,10 +38,10 @@ Name: kernel%{?flavor:-%{flavor}}
 Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.9
-%define _stablekver 8
+%define _stablekver 9
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 5
+%define customver 2
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -64,6 +64,9 @@ Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basek
 Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
 Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
 Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
+
+Patch10: 0001-amd-vcn-dpg.patch
+
 # Dev patches
 #Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all-dev.patch
 #Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched-dev/0001-bore-cachy.patch
@@ -267,6 +270,9 @@ patch -p1 -i %{PATCH1}
 # Apply EEVDF and BORE patches
 patch -p1 -i %{PATCH2}
 
+# Extra patches
+path -p1 -i
+
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
 patch -p1 -i %{PATCH4} -d %{_builddir}/%{_nv_open_pkg}/
@@ -406,8 +412,8 @@ make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_HDR_PATH=%{buildroot}/usr h
 
 # Le nvidia-open
 cd %{_builddir}/%{_nv_open_pkg}
-install -dm755 "%{buildroot}/lib/modules/%{kverstr}/extra/nvidia"
-install -m644 kernel-open/*.ko "%{buildroot}/lib/modules/%{kverstr}/extra/nvidia"
+install -dm755 "%{buildroot}/lib/modules/%{kverstr}/nvidia"
+install -m644 kernel-open/*.ko "%{buildroot}/lib/modules/%{kverstr}/nvidia"
 install -Dt "%{buildroot}/usr/share/licenses/nvidia-open" -m644 COPYING
 find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
 
@@ -705,8 +711,7 @@ fi
 /lib/modules/%{kverstr}/symvers.gz
 
 %files modules
-%defattr (-, root, root)
-/lib/modules/%{kverstr}/*
+/lib/modules/%{kverstr}/
 %exclude /lib/modules/%{kverstr}/.vmlinuz.hmac
 %exclude /lib/modules/%{kverstr}/config
 %exclude /lib/modules/%{kverstr}/vmlinuz
@@ -714,10 +719,10 @@ fi
 %exclude /lib/modules/%{kverstr}/symvers.gz
 %exclude /lib/modules/%{kverstr}/build
 %exclude /lib/modules/%{kverstr}/source
-%exclude /lib/modules/%{kverstr}/extra/nvidia
+%exclude /lib/modules/%{kverstr}/nvidia
 
 %files nvidia-open
-/lib/modules/%{kverstr}/extra/nvidia/
+/lib/modules/%{kverstr}/nvidia
 /usr/share/licenses/nvidia-open/COPYING
 
 %files headers
