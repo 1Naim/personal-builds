@@ -271,7 +271,7 @@ patch -p1 -i %{PATCH1}
 patch -p1 -i %{PATCH2}
 
 # Extra patches
-path -p1 -i %{PATCH10}
+patch -p1 -i %{PATCH10}
 
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
