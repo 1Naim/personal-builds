@@ -39,7 +39,19 @@ Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.10
 %define _stablekver 0
+%if %{_stablekver} == 0
+%define _tarkver %{_basekver}
+%else
+%define _tarkver %{_basekver}.%{_stablekver}
+%endif
+
 Version: %{_basekver}.%{_stablekver}
+
+%define _isrc 0
+%define _rckver rc7
+%if %{_isrc}
+%define _tarkverrc %{_basekver}-%{_rckver}
+%endif
 
 %define customver 1
 %define flaver cn%{customver}
@@ -54,8 +66,11 @@ License: GPLv2 and Redistributable, no modifications permitted
 Group: System Environment/Kernel
 Vendor: The Linux Community and CachyOS maintainer(s)
 URL: https://cachyos.org
-#Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_basekver}.%{_stablekver}.tar.xz
-Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_basekver}.tar.xz
+%if %{_isrc}
+Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_tarkverrc}.tar.xz
+%else
+Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_tarkver}.tar.xz
+%endif
 Source1: https://raw.githubusercontent.com/CachyOS/linux-cachyos/master/linux-cachyos/config
 Source2: https://github.com/NVIDIA/open-gpu-kernel-modules/archive/%{_nv_ver}/%{_nv_open_pkg}.tar.gz
 # Stable patches
@@ -251,8 +266,11 @@ Obsoletes: kernel-cachyos-bore-devel-matched <= 6.5.10-cb1
 This meta package is used to install matching core and devel packages for a given %{?flavor:%{flavor}} kernel.
 
 %prep
-# %setup -q -n linux-%{_basekver}.%{_stablekver}
-%setup -q -n linux-%{_basekver}
+%if %{_isrc}
+%setup -q -n linux-%{_tarkverrc}
+%else
+%setup -q -n linux-%{_tarkver}
+%endif
 
 tar -xzf %{SOURCE2} -C %{_builddir}
 
@@ -391,7 +409,11 @@ gcc ./scripts/sign-file.c -o ./scripts/sign-file -lssl -lcrypto
 
 # Build nvidia-open modules
 cd %{_builddir}/%{_nv_open_pkg}
-CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_basekver} SYSOUT=%{_builddir}/linux-%{_basekver} %{?_smp_mflags} modules
+%if %{_isrc}
+CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_tarkverrc} SYSOUT=%{_builddir}/linux-%{_tarkverrc} %{?_smp_mflags} modules
+%else
+CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_tarkver} SYSOUT=%{_builddir}/linux-%{_tarkver} %{?_smp_mflags} modules
+%endif
 
 %install
 
@@ -402,7 +424,7 @@ mkdir -p %{buildroot}/boot
 cp -v $ImageName %{buildroot}/boot/vmlinuz-%{kverstr}
 chmod 755 %{buildroot}/boot/vmlinuz-%{kverstr}
 
-ZSTD_CLEVEL=19 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_MOD_PATH=%{buildroot} INSTALL_MOD_STRIP=1 modules_install mod-fw=
+ZSTD_CLEVEL=19 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_MOD_PATH=%{buildroot} INSTALL_MOD_STRIP=1  DEPMOD=/doesnt/exist modules_install mod-fw=
 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_HDR_PATH=%{buildroot}/usr headers_install
 
 # Le nvidia-open
@@ -416,7 +438,11 @@ find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
 ### all of the things here are derived from the Fedora kernel.spec
 ### see
 ##### https://src.fedoraproject.org/rpms/kernel/blob/rawhide/f/kernel.spec
-cd %{_builddir}/linux-%{_basekver}
+%if %{_isrc}
+cd %{_builddir}/linux-%{_tarkverrc}
+%else
+cd %{_builddir}/linux-%{_tarkver}
+%endif
 rm -f %{buildroot}/lib/modules/%{kverstr}/build
 rm -f %{buildroot}/lib/modules/%{kverstr}/source
 mkdir -p %{buildroot}/lib/modules/%{kverstr}/build
