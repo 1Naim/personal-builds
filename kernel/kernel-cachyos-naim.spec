@@ -251,7 +251,8 @@ Obsoletes: kernel-cachyos-bore-devel-matched <= 6.5.10-cb1
 This meta package is used to install matching core and devel packages for a given %{?flavor:%{flavor}} kernel.
 
 %prep
-%setup -q -n linux-%{_basekver}.%{_stablekver}
+# %setup -q -n linux-%{_basekver}.%{_stablekver}
+%setup -q -n linux-%{_basekver}
 
 tar -xzf %{SOURCE2} -C %{_builddir}
 
@@ -390,7 +391,7 @@ gcc ./scripts/sign-file.c -o ./scripts/sign-file -lssl -lcrypto
 
 # Build nvidia-open modules
 cd %{_builddir}/%{_nv_open_pkg}
-CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_basekver}.%{_stablekver} SYSOUT=%{_builddir}/linux-%{_basekver}.%{_stablekver} %{?_smp_mflags} modules
+CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_basekver} SYSOUT=%{_builddir}/linux-%{_basekver} %{?_smp_mflags} modules
 
 %install
 
@@ -415,7 +416,7 @@ find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
 ### all of the things here are derived from the Fedora kernel.spec
 ### see
 ##### https://src.fedoraproject.org/rpms/kernel/blob/rawhide/f/kernel.spec
-cd %{_builddir}/linux-%{_basekver}.%{_stablekver}
+cd %{_builddir}/linux-%{_basekver}
 rm -f %{buildroot}/lib/modules/%{kverstr}/build
 rm -f %{buildroot}/lib/modules/%{kverstr}/source
 mkdir -p %{buildroot}/lib/modules/%{kverstr}/build
