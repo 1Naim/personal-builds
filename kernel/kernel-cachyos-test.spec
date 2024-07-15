@@ -39,10 +39,22 @@ Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.10
 %define _stablekver 0
+%if %{_stablekver} == 0
+%define _tarkver %{_basekver}
+%else
+%define _tarkver %{_basekver}.%{_stablekver}
+%endif
+
 Version: %{_basekver}.%{_stablekver}
 
-%define customver 6
-%define flaver rc%{customver}
+%define _isrc 0
+%define _rckver rc7
+%if %{_isrc}
+%define _tarkverrc %{_basekver}-%{_rckver}
+%endif
+
+%define customver 1
+%define flaver ct%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
 
@@ -54,20 +66,19 @@ License: GPLv2 and Redistributable, no modifications permitted
 Group: System Environment/Kernel
 Vendor: The Linux Community and CachyOS maintainer(s)
 URL: https://cachyos.org
-# Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_basekver}.%{_stablekver}.tar.xz
-Source0: https://github.com/torvalds/linux/archive/refs/tags/v%{_basekver}-rc6.tar.gz
-#Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_basekver}.tar.xz
+%if %{_isrc}
+Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_tarkverrc}.tar.xz
+%else
+Source0: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{_tarkver}.tar.xz
+%endif
 Source1: https://raw.githubusercontent.com/CachyOS/linux-cachyos/master/linux-cachyos/config
 Source2: https://github.com/NVIDIA/open-gpu-kernel-modules/archive/%{_nv_ver}/%{_nv_open_pkg}.tar.gz
 # Stable patches
-Patch0: 0001-cachyos-base-all.patch
+Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all.patch
 Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-sched-ext.patch
 Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
 Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
 Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
-# Dev patches
-#Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all-dev.patch
-#Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched-dev/0001-bore-cachy.patch
 %define __spec_install_post /usr/lib/rpm/brp-compress || :
 %define debug_package %{nil}
 BuildRequires: python3-devel
@@ -255,7 +266,11 @@ Obsoletes: kernel-cachyos-bore-devel-matched <= 6.5.10-cb1
 This meta package is used to install matching core and devel packages for a given %{?flavor:%{flavor}} kernel.
 
 %prep
-%setup -q -n linux-%{_basekver}-rc6
+%if %{_isrc}
+%setup -q -n linux-%{_tarkverrc}
+%else
+%setup -q -n linux-%{_tarkver}
+%endif
 
 tar -xzf %{SOURCE2} -C %{_builddir}
 
@@ -267,6 +282,9 @@ patch -p1 -i %{PATCH1}
 
 # Apply EEVDF and BORE patches
 patch -p1 -i %{PATCH2}
+
+# Extra patches
+# patch -p1 -i %{PATCH10}
 
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
@@ -311,12 +329,6 @@ scripts/config -d DEFAULT_CUBIC
 scripts/config -e TCP_CONG_BBR
 scripts/config -e DEFAULT_BBR
 scripts/config --set-str DEFAULT_TCP_CONG bbr
-# Switch into FQ - bbr3 doesn't work properly with FQ_CODEL
-scripts/config -m NET_SCH_FQ_CODEL
-scripts/config -e NET_SCH_FQ
-scripts/config -d DEFAULT_FQ_CODEL
-scripts/config -e DEFAULT_FQ
-scripts/config --set-str DEFAULT_NET_SCH fq
 
 # Disable DEBUG
 scripts/config -d SLUB_DEBUG
@@ -375,7 +387,7 @@ scripts/config -e HAVE_GCC_PLUGINS
 scripts/config -u DEFAULT_HOSTNAME
 
 # Enable SELinux (https://github.com/sirlucjan/copr-linux-cachyos/pull/1)
-scripts/config --set-str CONFIG_LSM “lockdown,yama,integrity,selinux,bpf,landlock”
+scripts/config --set-str CONFIG_LSM lockdown,yama,integrity,selinux,bpf,landlock
 
 # Set kernel version string as build salt
 scripts/config --set-str BUILD_SALT "%{kverstr}"
@@ -397,7 +409,11 @@ gcc ./scripts/sign-file.c -o ./scripts/sign-file -lssl -lcrypto
 
 # Build nvidia-open modules
 cd %{_builddir}/%{_nv_open_pkg}
-CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_basekver}-rc6 SYSOUT=%{_builddir}/linux-%{_basekver}-rc6 %{?_smp_mflags} modules
+%if %{_isrc}
+CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_tarkverrc} SYSOUT=%{_builddir}/linux-%{_tarkverrc} %{?_smp_mflags} modules
+%else
+CFLAGS= CXXFLAGS= LDFLAGS= make %{?llvm_build_env_vars} KERNEL_UNAME=%{kverstr} IGNORE_PREEMPT_RT_PRESENCE=1 IGNORE_CC_MISMATCH=yes SYSSRC=%{_builddir}/linux-%{_tarkver} SYSOUT=%{_builddir}/linux-%{_tarkver} %{?_smp_mflags} modules
+%endif
 
 %install
 
@@ -408,13 +424,13 @@ mkdir -p %{buildroot}/boot
 cp -v $ImageName %{buildroot}/boot/vmlinuz-%{kverstr}
 chmod 755 %{buildroot}/boot/vmlinuz-%{kverstr}
 
-ZSTD_CLEVEL=19 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_MOD_PATH=%{buildroot} INSTALL_MOD_STRIP=1 modules_install mod-fw=
+ZSTD_CLEVEL=19 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_MOD_PATH=%{buildroot} INSTALL_MOD_STRIP=1  DEPMOD=/doesnt/exist modules_install mod-fw=
 make %{?llvm_build_env_vars} %{?_smp_mflags} INSTALL_HDR_PATH=%{buildroot}/usr headers_install
 
 # Le nvidia-open
 cd %{_builddir}/%{_nv_open_pkg}
-install -dm755 "%{buildroot}/lib/modules/%{kverstr}/extra/nvidia"
-install -m644 kernel-open/*.ko "%{buildroot}/lib/modules/%{kverstr}/extra/nvidia"
+install -dm755 "%{buildroot}/lib/modules/%{kverstr}/nvidia"
+install -m644 kernel-open/*.ko "%{buildroot}/lib/modules/%{kverstr}/nvidia"
 install -Dt "%{buildroot}/usr/share/licenses/nvidia-open" -m644 COPYING
 find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
 
@@ -422,7 +438,11 @@ find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
 ### all of the things here are derived from the Fedora kernel.spec
 ### see
 ##### https://src.fedoraproject.org/rpms/kernel/blob/rawhide/f/kernel.spec
-cd %{_builddir}/linux-%{_basekver}-rc6
+%if %{_isrc}
+cd %{_builddir}/linux-%{_tarkverrc}
+%else
+cd %{_builddir}/linux-%{_tarkver}
+%endif
 rm -f %{buildroot}/lib/modules/%{kverstr}/build
 rm -f %{buildroot}/lib/modules/%{kverstr}/source
 mkdir -p %{buildroot}/lib/modules/%{kverstr}/build
@@ -668,7 +688,7 @@ if [ ! -z $(rpm -qa | grep grubby) ]; then
 fi
 
 %preun core
-/bin/kernel-install remove %{kverstr} /lib/modules/%{kverstr}/vmlinuz || exit $?
+/bin/kernel-install remove %{kverstr} || exit $?
 if [ -x /usr/sbin/weak-modules ]
 then
 /usr/sbin/weak-modules --remove-kernel %{kverstr} || exit $?
@@ -693,7 +713,7 @@ fi
 %posttrans nvidia-open
 /sbin/depmod -a %{kverstr}
 
-%postun nvidia-open
+%postun modules
 /sbin/depmod -a %{kverstr}
 
 %files core
@@ -702,9 +722,9 @@ fi
 %ghost %attr(0600, root, root) /boot/initramfs-%{kverstr}.img
 %ghost %attr(0600, root, root) /boot/symvers-%{kverstr}.gz
 %ghost %attr(0644, root, root) /boot/config-%{kverstr}
-/boot/.vmlinuz-%{kverstr}.hmac
+%ghost /boot/.vmlinuz-%{kverstr}.hmac
+%dir /lib/modules
 %dir /lib/modules/%{kverstr}/
-%dir /lib/modules/%{kverstr}/kernel/
 /lib/modules/%{kverstr}/.vmlinuz.hmac
 /lib/modules/%{kverstr}/config
 /lib/modules/%{kverstr}/vmlinuz
@@ -712,8 +732,7 @@ fi
 /lib/modules/%{kverstr}/symvers.gz
 
 %files modules
-%defattr (-, root, root)
-/lib/modules/%{kverstr}/*
+/lib/modules/%{kverstr}/
 %exclude /lib/modules/%{kverstr}/.vmlinuz.hmac
 %exclude /lib/modules/%{kverstr}/config
 %exclude /lib/modules/%{kverstr}/vmlinuz
@@ -721,10 +740,10 @@ fi
 %exclude /lib/modules/%{kverstr}/symvers.gz
 %exclude /lib/modules/%{kverstr}/build
 %exclude /lib/modules/%{kverstr}/source
-%exclude /lib/modules/%{kverstr}/extra/nvidia
+%exclude /lib/modules/%{kverstr}/nvidia
 
 %files nvidia-open
-/lib/modules/%{kverstr}/extra/nvidia/*
+/lib/modules/%{kverstr}/nvidia
 /usr/share/licenses/nvidia-open/COPYING
 
 %files headers

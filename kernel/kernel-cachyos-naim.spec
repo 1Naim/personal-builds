@@ -710,6 +710,9 @@ fi
 %post modules
 /sbin/depmod -a %{kverstr}
 
+%posttrans nvidia-open
+/sbin/depmod -a %{kverstr}
+
 %postun modules
 /sbin/depmod -a %{kverstr}
 
