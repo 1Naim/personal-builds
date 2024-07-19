@@ -53,7 +53,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 1
+%define customver 3
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
