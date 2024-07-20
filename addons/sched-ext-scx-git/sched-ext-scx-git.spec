@@ -1,17 +1,18 @@
 %global _default_patch_fuzz 2
-%global commit cb86768ed99d5d663e4cf6f2de7d69e11baa3da1
+%global commit b517882e79f325ae4b71fac2c5cc4598533727ce
 %global shortcommit %(c=%{commit}; echo ${c:0:7})
 
 %define _disable_source_fetch 0
 
 Name:           sched-ext-scx-git
-Version:        20240718.r%{shortcommit}
+Version:        20240720.r%{shortcommit}
 Release:        1%{?dist}
 Summary:        Sched_ext Schedulers and Tools
 
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
+Patch0:         0001-lavd-vtime-new.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
