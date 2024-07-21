@@ -12,7 +12,6 @@ Summary:        Sched_ext Schedulers and Tools
 License:        GPL=2.0
 URL:            https://github.com/sched-ext/scx
 Source0:        %{URL}/archive/%{commit}/scx-%{commit}.tar.gz
-Patch0:         0001-lavd-vtime-new.patch
 
 BuildRequires:  gcc
 BuildRequires:  git
