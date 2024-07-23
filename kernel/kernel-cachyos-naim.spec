@@ -12,6 +12,9 @@
 %define _build_id_links none
 %define _disable_source_fetch 0
 
+# Disable frame pointers
+%undefine _include_frame_pointers
+
 # See https://fedoraproject.org/wiki/Changes/SetBuildFlagsBuildCheck to why this has to be done
 %if 0%{?fedora} >= 37
 %undefine _auto_set_build_flags
@@ -53,7 +56,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 4
+%define customver 5
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -713,9 +716,6 @@ fi
 %posttrans nvidia-open
 /sbin/depmod -a %{kverstr}
 
-%postun modules
-/sbin/depmod -a %{kverstr}
-
 %files core
 %ghost %attr(0600, root, root) /boot/vmlinuz-%{kverstr}
 %ghost %attr(0600, root, root) /boot/System.map-%{kverstr}
@@ -723,7 +723,6 @@ fi
 %ghost %attr(0600, root, root) /boot/symvers-%{kverstr}.gz
 %ghost %attr(0644, root, root) /boot/config-%{kverstr}
 %ghost /boot/.vmlinuz-%{kverstr}.hmac
-%dir /lib/modules
 %dir /lib/modules/%{kverstr}/
 /lib/modules/%{kverstr}/.vmlinuz.hmac
 /lib/modules/%{kverstr}/config
