@@ -33,7 +33,7 @@
 %endif
 
 # Nvidia Stuff
-%define _nv_ver 555.58.02
+%define _nv_ver 560.28.03
 %define _nv_open_pkg open-gpu-kernel-modules-%{_nv_ver}
 
 %define flavor cachyos-naim
@@ -56,7 +56,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 5
+%define customver 6
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
