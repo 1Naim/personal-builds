@@ -33,7 +33,7 @@
 %endif
 
 # Nvidia Stuff
-%define _nv_ver 560.28.03
+%define _nv_ver 555.58.02
 %define _nv_open_pkg open-gpu-kernel-modules-%{_nv_ver}
 
 %define flavor cachyos-naim
@@ -56,7 +56,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 1
+%define customver 2
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -81,6 +81,7 @@ Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basek
 Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-sched-ext.patch
 Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
 Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
+Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
 %define __spec_install_post /usr/lib/rpm/brp-compress || :
 %define debug_package %{nil}
 BuildRequires: python3-devel
@@ -290,6 +291,7 @@ patch -p1 -i %{PATCH2}
 
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
+patch -p1 -i %{PATCH4} -d %{_builddir}/%{_nv_open_pkg}/
 
 # Fetch the config and move it to the proper directory
 cp %{SOURCE1} .config
@@ -302,8 +304,7 @@ scripts/config -u LOCALVERSION
 scripts/config -e CACHY
 
 # Enable BORE Scheduler
-scripts/config -e SCHED_BORE
-scripts/config --set-val MIN_BASE_SLICE_NS 1000000
+scripts/config -e SCHED_BORE --set-val MIN_BASE_SLICE_NS 1000000
 
 # Enable sched-ext
 scripts/config -e SCHED_CLASS_EXT
