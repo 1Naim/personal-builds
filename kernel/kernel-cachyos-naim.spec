@@ -41,7 +41,7 @@ Name: kernel%{?flavor:-%{flavor}}
 Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.10
-%define _stablekver 0
+%define _stablekver 1
 %if %{_stablekver} == 0
 %define _tarkver %{_basekver}
 %else
@@ -56,7 +56,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 6
+%define customver 1
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -79,7 +79,7 @@ Source2: https://github.com/NVIDIA/open-gpu-kernel-modules/archive/%{_nv_ver}/%{
 # Stable patches
 Patch0: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/all/0001-cachyos-base-all.patch
 Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-sched-ext.patch
-Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched-dev/0001-bore-cachy-ext.patch
+Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
 Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
 %define __spec_install_post /usr/lib/rpm/brp-compress || :
 %define debug_package %{nil}
@@ -433,7 +433,7 @@ cd %{_builddir}/%{_nv_open_pkg}
 install -dm755 "%{buildroot}/lib/modules/%{kverstr}/nvidia"
 install -m644 kernel-open/*.ko "%{buildroot}/lib/modules/%{kverstr}/nvidia"
 install -Dt "%{buildroot}/usr/share/licenses/nvidia-open" -m644 COPYING
-find "%{buildroot}" -name '*.ko' -exec zstd --rm -10 {} +
+find "%{buildroot}" -name '*.ko' -exec zstd --rm -19 {} +
 
 # prepare -devel files
 ### all of the things here are derived from the Fedora kernel.spec
