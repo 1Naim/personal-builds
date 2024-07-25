@@ -56,7 +56,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 2
+%define customver 3
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -82,6 +82,7 @@ Patch1: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basek
 Patch2: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/sched/0001-bore-cachy-ext.patch
 Patch3: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/make-modeset-fbdev-default.patch
 Patch4: https://raw.githubusercontent.com/CachyOS/kernel-patches/master/%{_basekver}/misc/nvidia/gsp-fix-stutter.patch
+Patch10:https://src.fedoraproject.org/rpms/kernel/raw/stabilization/f/patch-6.10-redhat.patch
 %define __spec_install_post /usr/lib/rpm/brp-compress || :
 %define debug_package %{nil}
 BuildRequires: python3-devel
@@ -287,7 +288,7 @@ patch -p1 -i %{PATCH1}
 patch -p1 -i %{PATCH2}
 
 # Extra patches
-# patch -p1 -i %{PATCH10}
+patch -p1 -i %{PATCH10}
 
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
