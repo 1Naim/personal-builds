@@ -33,7 +33,11 @@
 %endif
 
 # Nvidia Stuff
+%if 0%{?fedora} >= 41
+%define _nv_ver 560.28.03
+%else
 %define _nv_ver 555.58.02
+%endif
 %define _nv_open_pkg open-gpu-kernel-modules-%{_nv_ver}
 
 %define flavor cachyos-naim
@@ -41,7 +45,7 @@ Name: kernel%{?flavor:-%{flavor}}
 Summary: The Linux Kernel with Cachyos-BORE-EEVDF Patches
 
 %define _basekver 6.10
-%define _stablekver 1
+%define _stablekver 2
 %if %{_stablekver} == 0
 %define _tarkver %{_basekver}
 %else
@@ -56,7 +60,7 @@ Version: %{_basekver}.%{_stablekver}
 %define _tarkverrc %{_basekver}-%{_rckver}
 %endif
 
-%define customver 3
+%define customver 1
 %define flaver cn%{customver}
 
 Release:%{flaver}.0%{?ltoflavor:.lto}%{?dist}
@@ -292,7 +296,10 @@ patch -p1 -i %{PATCH10}
 
 # Apply patches for nvidia-open package
 patch -p1 -i %{PATCH3} -d %{_builddir}/%{_nv_open_pkg}/kernel-open
+%if %{_nv_ver} > 555
 patch -p1 -i %{PATCH4} -d %{_builddir}/%{_nv_open_pkg}/
+%endif
+
 
 # Fetch the config and move it to the proper directory
 cp %{SOURCE1} .config
